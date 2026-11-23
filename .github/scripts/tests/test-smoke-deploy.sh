@@ -3,6 +3,7 @@
 # the deployed Worker and the edge in front of it (smoke_stub.py), including the cases that must FAIL. Every case goes through `expect`, which checks the exit status AND a message fragment, so a case cannot pass for the
 # wrong reason and none is merely printed. The passing case is what gives each failing one its meaning: the same stub, the same
 # script and the same environment pass until exactly one thing is broken.
+# shellcheck disable=SC2030,SC2031 # the subshells are the point: a change to PATH or to a variable made in one must not reach the next run, and the `leak` cases prove it
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 SMOKE="$HERE/scripts/smoke-deploy.sh"
 STUB="$HERE/.github/scripts/tests/smoke_stub.py"
@@ -239,6 +240,7 @@ for bad in "RC v0.3.0" "rc V0.3.0" "rc -v0" "rc v0/3" "abcdefghijklmnopq v0.3.0"
   # shellcheck disable=SC2086
   expect "opt-in: '$bad' is a usage error, nothing asked" 2 "edge-opt-in:" opt_in_against_stub $bad
 done
+# shellcheck disable=SC2086 # $OPT_ENV is a list of NAME=value words, split on purpose
 expect "opt-in: an origin over http elsewhere is a usage error" 2 "must be https" env $OPT_ENV "$OPTIN" "http://example.com" rc v0.3.0 "$T/x.jar"
 expect "opt-in: no token is a usage error" 2 "EDGE_CI_CLIENT_ID and EDGE_CI_CLIENT_SECRET are required" \
   env OPT_IN_ATTEMPTS=1 "$OPTIN" "https://thrust.example.test" rc v0.3.0 "$T/x.jar"
@@ -323,6 +325,7 @@ expect "edge controls: no attempts is a usage error" 2 "EDGE_CONTROL_ATTEMPTS" \
 
 # ---- hygiene ---------------------------------------------------------------------------------------------------------------
 no_stub_left() {
+  # shellcheck disable=SC2009 # a fixed string in a process's command line: pgrep -f takes a regular expression
   if ps -eo command | grep -F "smoke_stub.py --port-file $T" | grep -vF grep > /dev/null; then
     echo "a stand-in server is still running"; return 1
   fi

@@ -56,7 +56,7 @@ while IFS= read -r rel; do
   while [ "$n" -lt "$ATTEMPTS" ]; do
     n=$((n + 1))
     code="$(curl -sS --max-time 20 -o "$WORK/body" -D "$WORK/headers" -w '%{http_code}' "$url" 2> "$WORK/curl.err")" || code="000"
-    ctype="$(grep -i '^content-type:' "$WORK/headers" 2> /dev/null | tail -1 | tr -d '\r' | tr 'A-Z' 'a-z')"
+    ctype="$(grep -i '^content-type:' "$WORK/headers" 2> /dev/null | tail -1 | tr -d '\r' | tr '[:upper:]' '[:lower:]')"
     if [ "$code" != 200 ]; then
       why="answered $code, not 200"
     elif printf '%s' "$ctype" | grep -q 'text/html'; then

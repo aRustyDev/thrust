@@ -109,7 +109,9 @@ ALL='["documentation","security","web","lint","test","build"]'
 # every job succeeded: "documentation=success security=success ..."
 OKARGS=""
 for j in $JOBS; do OKARGS="$OKARGS $j=success"; done
+# shellcheck disable=SC2086 # $OKARGS is a list of job=result words, split on purpose
 ALLOK="$(needs success $OKARGS)"
+# shellcheck disable=SC2086 # $JOBS is a list of job names, split on purpose
 expect "gate: everything expected, everything passed" 0 "$(echo $JOBS | wc -w | tr -d ' ') expected jobs passed" gate a1 "$ALLOK" "$ALL"
 # a called workflow must also say pass: its result alone is not the proof (research 0018: a `verdict` job that was skipped leaves it success).
 # Each called workflow is tried on its own, the others in a state that passes, so that the case can only fail because of it.
@@ -123,6 +125,7 @@ for w in $CALLED; do
     gate "a7-$w" "$(noverdict "$ALLOK" "$w" ',"outputs":{"verdict":"fail"}')" "$ALL"
   OTHERS=""
   for j in $JOBS; do [ "$j" = "$w" ] || OTHERS="$OTHERS $j=success"; done
+  # shellcheck disable=SC2086 # $OTHERS is a list of job=result words, split on purpose
   expect "gate: $w is planned, and was skipped (its calling job's own if)" 1 "$w was expected to run and its result is 'skipped'" \
     gate "a8-$w" "$(needs success $OTHERS)" "$ALL"
 done

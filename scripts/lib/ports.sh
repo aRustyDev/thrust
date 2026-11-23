@@ -1,3 +1,4 @@
+# shellcheck shell=sh
 # Ports for the services a contract run starts (the server or `wrangler dev`, the mock identity provider, Postgres, Mailpit,
 # the delay proxy). Sourced by scripts/contract.sh; tested by .github/scripts/tests/test-ports.sh.
 #

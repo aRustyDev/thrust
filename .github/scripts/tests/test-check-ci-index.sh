@@ -27,44 +27,45 @@ rows() { # rows <README> <name>...: a README with a header and one row for each 
   printf '# x\n\n| File | Does |\n|---|---|\n' > "$out"
   for item in "$@"; do printf '| `%s` | does a thing |\n' "$item" >> "$out"; done
 }
-complete() { # complete <name>: a root with two workflows and two actions, each with its row
+# (not `complete`: that is a bash builtin, and shellcheck reads every call of the name as one, SC3044)
+full_root() { # full_root <name>: a root with two workflows and two actions, each with its row
   r="$(root "$1")"; wf "$r" a.yml; wf "$r" b.yml; act "$r" x; act "$r" y
   rows "$r/.github/workflows/README.md" a.yml b.yml; rows "$r/.github/actions/README.md" x y
   echo "$r"
 }
 
-r="$(complete ok)"
+r="$(full_root ok)"
 expect "a complete index passes" 0 "2 workflows and 2 actions, each with its row" "$r"
 
-r="$(complete w-no-row)"; rows "$r/.github/workflows/README.md" a.yml
+r="$(full_root w-no-row)"; rows "$r/.github/workflows/README.md" a.yml
 expect "a workflow with no row is refused, and named" 1 'workflows/README.md has no row for `b.yml`' "$r"
-r="$(complete w-extra)"; rows "$r/.github/workflows/README.md" a.yml b.yml gone.yml
+r="$(full_root w-extra)"; rows "$r/.github/workflows/README.md" a.yml b.yml gone.yml
 expect "a row for a workflow that is not there is refused" 1 'has a row for `gone.yml`, which is not there' "$r"
-r="$(complete w-twice)"; rows "$r/.github/workflows/README.md" a.yml b.yml a.yml
+r="$(full_root w-twice)"; rows "$r/.github/workflows/README.md" a.yml b.yml a.yml
 expect "a workflow with two rows is refused" 1 'more than one row for `a.yml`' "$r"
-r="$(complete w-none)"; rm "$r/.github/workflows/README.md"
+r="$(full_root w-none)"; rm "$r/.github/workflows/README.md"
 expect "no workflows README is refused" 1 "workflows has no README.md" "$r"
-r="$(complete a-no-row)"; rows "$r/.github/actions/README.md" x
+r="$(full_root a-no-row)"; rows "$r/.github/actions/README.md" x
 expect "an action with no row is refused, and named" 1 'actions/README.md has no row for `y`' "$r"
-r="$(complete a-extra)"; rows "$r/.github/actions/README.md" x y gone
+r="$(full_root a-extra)"; rows "$r/.github/actions/README.md" x y gone
 expect "a row for an action that is not there is refused" 1 'has a row for `gone`, which is not there' "$r"
-r="$(complete a-twice)"; rows "$r/.github/actions/README.md" x y y
+r="$(full_root a-twice)"; rows "$r/.github/actions/README.md" x y y
 expect "an action with two rows is refused" 1 'more than one row for `y`' "$r"
-r="$(complete a-none)"; rm "$r/.github/actions/README.md"
+r="$(full_root a-none)"; rm "$r/.github/actions/README.md"
 expect "no actions README is refused" 1 "actions has no README.md" "$r"
 
 # what is not a row
-r="$(complete second-cell)"
+r="$(full_root second-cell)"
 printf '# x\n\n| File | Does |\n|---|---|\n| `a.yml` | calls `b.yml` |\n' > "$r/.github/workflows/README.md"
 expect "a name in the second cell is not a row" 1 'has no row for `b.yml`' "$r"
-r="$(complete prose)"
+r="$(full_root prose)"
 printf '# x\n\nSee `b.yml` for details.\n\n| File | Does |\n|---|---|\n| `a.yml` | a |\n' > "$r/.github/workflows/README.md"
 expect "a name in prose is not a row" 1 'has no row for `b.yml`' "$r"
-r="$(complete yaml)"; wf "$r" z.yaml
+r="$(full_root yaml)"; wf "$r" z.yaml
 expect "a .yaml workflow needs its row too" 1 'has no row for `z.yaml`' "$r"
-r="$(complete not-an-action)"; mkdir -p "$r/.github/actions/notes"
+r="$(full_root not-an-action)"; mkdir -p "$r/.github/actions/notes"
 expect "a directory with no action.yml is not an action" 0 "each with its row" "$r"
-r="$(complete readme-is-no-workflow)"
+r="$(full_root readme-is-no-workflow)"
 expect "the README is not a workflow" 0 "2 workflows" "$r"
 
 # a call gone wrong

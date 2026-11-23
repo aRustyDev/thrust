@@ -336,6 +336,29 @@ if linux_wf:
     check(f"{linux_path}: {LINUX_JOB} has no secret, no environment and no id-token: a compile proof publishes and attests nothing",
           [l for l in linux_text.splitlines() if re.search(r"secrets\.|environment:|id-token|attestations|contents: write", l) and not l.strip().startswith("#")], [])
 
+# The bash job (Lint phase, stage 1) runs shellcheck over the scripts the repository maintains, through .github/scripts/check-shell.sh. Four things about
+# it can be wrong and leave the job looking healthy until the runner differs from a laptop: a shellcheck installed at a version the helper is not held to (the
+# helper refuses it, but only on the runner), no install at all (the image's 0.9.0 answers, and the helper refuses that too), a run that is not the helper (which
+# carries the control, and the list of what is not ours), and a Rust toolchain and cache the job does not use. Each is a line, checked as text.
+BASH_JOB = "bash"
+bash_wf = next((w for w, jobs in pc.WORKFLOWS.items() if BASH_JOB in jobs), None)
+check(f"the job {BASH_JOB} is a job of a called workflow", bash_wf is not None, True)
+if bash_wf:
+    bash_path = f".github/workflows/{bash_wf}.yml"
+    bash_block = block(read_text(bash_path) or "", BASH_JOB)
+    bash_code = [l for l in bash_block.splitlines() if not l.strip().startswith("#")]
+    helper = read_text(".github/scripts/check-shell.sh") or ""
+    held_to = re.search(r'^SHELLCHECK_VERSION="([^"]+)"$', helper, re.M)
+    check("check-shell.sh names the version it is held to, once", len(re.findall(r'^SHELLCHECK_VERSION="', helper, re.M)), 1)
+    installs = re.findall(r"^          tool: shellcheck@(\S+)$", bash_block, re.M)
+    check(f"{bash_path}: {BASH_JOB} installs shellcheck at the version check-shell.sh is held to ({held_to.group(1) if held_to else None})",
+          installs == [held_to.group(1)] if held_to else None, True)
+    check(f"{bash_path}: {BASH_JOB} installs it with install-action, pinned to a commit",
+          bool(re.search(r"^      - uses: taiki-e/install-action@[0-9a-f]{40} # v\S+\n        with:\n          tool: shellcheck@", bash_block, re.M)), True)
+    check(f"{bash_path}: {BASH_JOB} runs the helper, which carries the control, and not shellcheck by hand", "        run: sh .github/scripts/check-shell.sh\n" in bash_block, True)
+    check(f"{bash_path}: {BASH_JOB} runs no other command", len([l for l in bash_code if re.match(r"^\s+run:", l)]), 1)
+    check(f"{bash_path}: {BASH_JOB} sets up no Rust toolchain or cache (it reads shell)", [l for l in bash_code if "setup-rust" in l or "cache" in l], [])
+
 # The wasm job (Phase 3, stage 2) builds the two Workers the deploy bundle ships, in release, with the bundle's own commands, and shares the bundle's cache key so that the next
 # release candidate or tag restores what `main` saved. Six things about it can be wrong and leave the job green: a Worker built by another command than the bundle's (the proof would be of
 # something that does not ship), a Worker built in another directory, a check that looks at one of the Workers or one of the three files only (a build that wrote no wasm would pass), a cache key that

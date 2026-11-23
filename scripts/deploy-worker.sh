@@ -126,7 +126,7 @@ wr() { env -u DATABASE_URL -u TUNNEL_SERVICE_TOKEN_ID -u TUNNEL_SERVICE_TOKEN_SE
 migrate_step() { env -u CLOUDFLARE_API_TOKEN -u SMOKE_PASSWORD -u GH_TOKEN sh "$MIGRATE_CI"; }
 smoke() { # smoke <extra VAR=value words, or empty> <base> <expected version>
   extra="$1"; shift
-  # $extra is deliberately split: it is only ever `NAME=value` words written in this file
+  # shellcheck disable=SC2086 # $extra is deliberately split: it is only ever `NAME=value` words written in this file
   env -u CLOUDFLARE_API_TOKEN -u DATABASE_URL -u TUNNEL_SERVICE_TOKEN_ID -u TUNNEL_SERVICE_TOKEN_SECRET -u GH_TOKEN $extra sh "$SMOKE" "$@"
 }
 # the one process that gets the GitHub token: it lists and downloads the previous release's bundle, and verifies its attestation

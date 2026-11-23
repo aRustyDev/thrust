@@ -37,7 +37,7 @@ git init -q -b main . || exit 1
 git config user.name "deploy test"; git config user.email "deploy-test@example.invalid"; git config commit.gpgsign false
 commit() { git add -A && git commit -q -m "$1" && git rev-parse HEAD; }
 echo "CREATE TABLE a (id int);" > crates/adapters/postgres/migrations/0001.sql
-H0="$(commit c0-base)"
+commit c0-base > /dev/null
 echo notes > README.md;                                                                   H1="$(commit c1-other)"
 echo "CREATE TABLE b (id int);" > crates/adapters/postgres/migrations/0002.sql;      H2="$(commit c2-migrations)"
 printf '\n[[migrations]]\ntag = "v2"\nnew_sqlite_classes = ["More"]\n' >> crates/worker/wrangler.deploy.toml

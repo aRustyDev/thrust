@@ -153,6 +153,7 @@ if grep -qF 'PORTS_DRAWN_FILE="$LOG.ports"' "$CONTRACT" && grep -qF 'ports_remem
 else bad "contract.sh must set PORTS_DRAWN_FILE=\"\$LOG.ports\" and call ports_remember"; fi
 n=$((n + 1))
 unremembered=""
+# shellcheck disable=SC2013 # the words are `${THRUST_..._PORT:-}` names, which hold no blank
 for given in $(grep -o '\${THRUST_[A-Z_]*PORT:-}' "$CONTRACT" | sort -u); do
   if [ "$(grep -cF "\"$given\"" "$CONTRACT")" -lt 2 ]; then unremembered="$unremembered $given"; fi
 done

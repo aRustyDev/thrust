@@ -211,8 +211,7 @@ VERDICT=PASS
 
 # a run that must fail, and fail by saying why: `must_fail <label> <what it was told> <words the failure must hold> [control] [target]`
 must_fail() {
-  journey "$1" "${4:-}" "${5:-}"
-  if [ "$?" -eq 0 ]; then
+  if journey "$1" "${4:-}" "${5:-}"; then
     echo "e2e: CONTROL FAILED: the journey passed $2, so it cannot see that" >&2
     VERDICT=FAIL
   elif ! grep -q "$3" "$OUT/$1.log"; then
@@ -227,8 +226,7 @@ must_fail() {
 # a run that must PASS although it is told something that makes a journey which is not robust fail: `must_pass <label> <what it was told> <control>`.
 # It is held to what the main run is held to: the exit status, and then the count guard (the control itself says CONTROL INERT if it did nothing)
 must_pass() {
-  journey "$1" "$3"
-  if [ "$?" -ne 0 ]; then
+  if ! journey "$1" "$3"; then
     echo "e2e: CONTROL FAILED: the journey failed $2, and it must not; the end of its log:" >&2
     tail -30 "$OUT/$1.log" >&2
     VERDICT=FAIL
@@ -285,8 +283,7 @@ if [ "$WHAT" = controls ]; then
   must_pass control-slow-page "with the browser slowed to a CI runner's pace and the profile answer of the home page late" slow-page
 
   # the skip control is the other way round: Playwright exits 0, and it is the count guard that must refuse the run
-  journey control-skip skip
-  if [ "$?" -ne 0 ]; then
+  if ! journey control-skip skip; then
     echo "e2e: CONTROL FAILED: the skipped journey did not exit 0, so the control does not test the count guard; the end of its log:" >&2
     tail -20 "$OUT/control-skip.log" >&2
     VERDICT=FAIL

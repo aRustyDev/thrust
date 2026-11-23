@@ -41,7 +41,7 @@ matrix_cases=0
 while IFS='|' read -r construct reason; do
   for casing in upper lower; do
     sql="$construct"
-    [ "$casing" = lower ] && sql="$(printf '%s' "$construct" | tr 'A-Z' 'a-z')"
+    [ "$casing" = lower ] && sql="$(printf '%s' "$construct" | tr '[:upper:]' '[:lower:]')"
     for wrap in plain line block string; do
       case "$wrap" in
         plain) body="$sql;" ;;

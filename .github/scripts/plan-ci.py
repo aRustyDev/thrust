@@ -32,6 +32,9 @@ How a path decides (RULES, first match wins; a path that matches no rule needs n
   * a file that only a guard, a job or a pass reads runs that guard's job, or that pass on every target.
   * a file whose readers are not known runs everything: an unknown crate directory, an unlisted script, the toolchain, the
     lockfile, the workflow and actions that run the matrix, and this planner and its gate.
+  * besides all that (ALSO, which adds a job to what the first matching rule says): a shell script (a `*.sh` outside web/; the
+    one script without the extension, scripts/rs, runs everything), .shellcheckrc or a composite action's action.yml (its run
+    blocks are shell) plans the job `bash`.
 
 Then, from the changed crates C and the affected crates A (C and everything that depends on it):
   * C not empty: ci-scripts, deps, lint and hermetic (the whole workspace: they build it all anyway).
@@ -51,12 +54,12 @@ import json
 import re
 import sys
 
-JOBS = ("ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "wasm", "web", "docs")
+JOBS = ("ci-scripts", "deps", "lint", "bash", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "wasm", "web", "docs")
 
 # The called workflow each job belongs to (ADR-0102): {workflow: (its jobs)}. A job in none is still a job of ci.yml itself. Every
 # migration stage moves its jobs in here; a job may be in one workflow only, and a name here must be one of JOBS (check_workflows).
 # ci.yml's `gate` lists these workflows too, as VERDICT_JOBS, and test_plan_ci.py holds the two equal.
-WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint"), "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux", "wasm")}
+WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint", "bash"), "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux", "wasm")}
 
 # The binary each target of scripts/contract.sh starts. Everything a cell runs against is built from it.
 TARGET_BINARY = {
@@ -141,6 +144,18 @@ RULES = [
      "another workflow, action or script (its tests, and the workflow lint)"),
 ]
 COMPILED = [(re.compile(p), effect, why) for p, effect, why in RULES]
+
+# Rules that ADD a job to what the path's first matching rule in RULES says (which stops at its first match, so a job for every path of a
+# kind cannot be a rule of RULES without being repeated in each rule that could match the path first: scripts/wasm-tests.sh is the
+# workers job's, and ci-scripts', and also a shell script). (pattern, job, why). A path in web/ is the stock app's and is no shell this
+# repository maintains; a script that check-shell.sh leaves out (a plan's, a spike's) still plans the job, which is cheap, and not a second
+# copy of that list.
+ALSO = [
+    (r"^(?!web/).*\.sh$", "bash", "a shell script (shellcheck's job; .github/scripts/check-shell.sh decides which it reads)"),
+    (r"^\.shellcheckrc$", "bash", "shellcheck's configuration"),
+    (r"^\.github/actions/[^/]+/action\.yml$", "bash", "a composite action (shellcheck reads its run blocks)"),
+]
+ALSO_COMPILED = [(re.compile(p), job, why) for p, job, why in ALSO]
 
 # A group directory's README.md (ADR-0009: crates/<group>/README.md, crates/README.md), when no member holds it.
 GROUP_README = re.compile(r"^crates/(.+/)?README\.md$")
@@ -230,6 +245,10 @@ def plan(paths, dirs, deps, cells, full_reason=None):
     jobs, passes, changed = set(), set(), set()
     full = full_reason
     for path in paths:
+        for pattern, job, why in ALSO_COMPILED:
+            if pattern.search(path):
+                jobs.add(job)
+                notes.append(f"{path}: {why} -> {job}")
         for pattern, effect, why in COMPILED:
             if not pattern.search(path):
                 continue

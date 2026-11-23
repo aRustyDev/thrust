@@ -197,6 +197,7 @@ PG_CONTAINER=""
 MAIL_CONTAINER=""
 PROXY_PID=""
 
+# shellcheck disable=SC2329 # called by cleanup, which the trap below runs
 kill_tree() {
   for child in $(pgrep -P "$1" 2>/dev/null); do
     kill_tree "$child"
@@ -204,6 +205,7 @@ kill_tree() {
   kill -TERM "$1" 2>/dev/null || true
 }
 
+# shellcheck disable=SC2329 # run by the trap below
 cleanup() {
   if [ -n "$SERVER_PID" ]; then
     kill_tree "$SERVER_PID"

@@ -135,6 +135,7 @@ check_value() {
       ;;
     uuid)
       h4='[0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+      # shellcheck disable=SC2254 # $h4 is a glob (a hex digit) and must stay one: quoted, it would match only the text itself
       case "$val" in
         $h4$h4-$h4-$h4-$h4-$h4$h4$h4) ;;
         *) problem "$var='$val': must be a lowercase UUID (8-4-4-4-12 hex digits)"; return ;;
@@ -251,7 +252,7 @@ self_test() {
     THRUST_ACCESS_TEAM_DOMAIN=team.cloudflareaccess.com
     THRUST_ACCESS_AUD_RC=523f788ad6fe18e01ad8fbb6b85f9613323faa23b0d570fd418e782cd3e6afc3
     THRUST_ACCESS_AUD_DEV=0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9
-    THRUST_WORKERS_DEV_SUBDOMAIN=team-4d9
+    THRUST_WORKERS_DEV_SUBDOMAIN='team-4d9'
     export THRUST_WORKER_NAME THRUST_HYPERDRIVE_ID THRUST_R2_BUCKET THRUST_QUEUE THRUST_QUEUE_DLQ \
       THRUST_RL_SIGNIN_ID THRUST_RL_V1_ID THRUST_CSRF_ENFORCE THRUST_EMAIL_FROM THRUST_BASE_URL \
       THRUST_EDGE_WORKER_NAME THRUST_FLAGSHIP_APP_ID THRUST_ACCESS_TEAM_DOMAIN THRUST_ACCESS_AUD_RC THRUST_ACCESS_AUD_DEV \

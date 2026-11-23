@@ -22,6 +22,7 @@
 #     nothing is migrated; an undeployed production, a failed listing, classifier or migration each stop before any Preview;
 #   - step 9: TARGET_ALIAS is set last, after the smoke's control, and names the target; an alias that does not stick removes the
 #     target; an alias the policy lacks is a usage error.
+# shellcheck disable=SC2119,SC2120 # deploy takes optional VAR=value changes, and a call with none is the good environment as it is
 set -u
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 DEPLOY="$HERE/scripts/deploy-target.sh"

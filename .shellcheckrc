@@ -1,0 +1,14 @@
+# shellcheck's configuration for the whole repository (Lint phase, stage 1: .agents/plans/ci-workflows/phases/0005-lint.md).
+# .github/scripts/check-shell.sh passes this file with --rcfile, so CI, a laptop and the control read the same one; an editor, or a bare
+# `shellcheck` run inside a checkout, finds it by walking up from the script.
+#
+# Every level fails the `bash` job, as it does for the shell in a workflow's `run:` (actionlint runs shellcheck over those at every level).
+# The two codes below are switched off because this repository writes them on purpose, and they were 112 of the 212 findings of the first run:
+#   SC2016  an expression in single quotes that the shell must not expand (a grep, awk, sed or printf pattern, a `$` in a message)
+#   SC2015  `A && B || C` used as a one-line if/else, where C running after a failing B is what is wanted (the test scripts' idiom)
+# Anything else that is meant is annotated where it is, with `# shellcheck disable=SCnnnn # why`, so a reader sees the reason.
+disable=SC2016,SC2015
+
+# Follow what a script sources, from the script's own directory, so `. ./lib/ports.sh` is read and not reported as unfollowed (SC1091).
+external-sources=true
+source-path=SCRIPTDIR

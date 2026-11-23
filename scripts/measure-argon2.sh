@@ -130,6 +130,7 @@ for cfg in $CONFIGS; do
         --data "$signin" "$URL/auth/sign-in/?run=$label-burst$b" >>"$OUT/client.tsv" &
       pids="$pids $!"
     done
+    # shellcheck disable=SC2086 # $pids is a list of process ids, split on purpose
     wait $pids
   fi
 done
