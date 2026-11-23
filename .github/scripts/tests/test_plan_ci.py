@@ -50,13 +50,14 @@ def check(label, got, want):
         print(f"BAD  {label}: got {got!r}, wanted {want!r}")
 
 
-ALL_JOBS = {"ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "web", "docs"}
+ALL_JOBS = {"ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "wasm", "web", "docs"}
 CELLS = [
     "native-memory main", "native-memory oracle", "native-pg main", "native-pg oracle",
     "worker-memory main", "worker-cf main", "worker-cf oracle", "worker-cf e2e", "worker-cf e2e-mail",
 ]
 SERVER, WORKER, SUITE, PG = "thrust-server", "thrust-worker", "thrust-contract-tests", "thrust-adapters-selfhosted"
 POSTGRES = "thrust-adapters-postgres"  # the crate of the `migrate` binary, which the `linux` job builds with the server
+EDGE = "thrust-edge"  # the edge Worker, which the `wasm` job builds with the Worker
 BINARY = {"native-memory": SERVER, "native-pg": SERVER, "worker-memory": WORKER, "worker-cf": WORKER}
 
 
@@ -147,6 +148,8 @@ def want_for_crates(changed, deps):
         jobs.add("workers")
     if SERVER in hit or POSTGRES in hit:
         jobs.add("linux")
+    if WORKER in hit or EDGE in hit:
+        jobs.add("wasm")
     cells = {c for c in CELLS if BINARY[c.split(" ")[0]] in hit or SUITE in changed}
     if cells:
         jobs.add("contract")
@@ -297,6 +300,20 @@ migrate_layout = dict(ADR_0009, **{POSTGRES: "crates/adapters/postgres"})
 check("the crate of migrate plans linux where the server does not depend on it",
       "linux" in run_plan(["crates/adapters/postgres/src/lib.rs"], migrate_graph, layout=migrate_layout)[0], True)
 check("the server's own change still plans it there", "linux" in run_plan(["crates/server/src/lib.rs"], migrate_graph, layout=migrate_layout)[0], True)
+# The `wasm` job (Phase 3, stage 2) builds the Worker and the edge Worker in release (build.yml): planned when either crate is affected.
+check("the Worker's own change plans wasm", "wasm" in run_plan(["crates/worker/src/lib.rs"], REAL_GRAPH)[0], True)
+check("a crate the Worker depends on plans wasm", "wasm" in run_plan(["crates/adapters/cloudflare/src/lib.rs"], REAL_GRAPH)[0], True)
+check("a crate the Worker depends on, through another, plans wasm", "wasm" in run_plan(["crates/core/types/src/lib.rs"], REAL_GRAPH)[0], True)
+check("the native server's own change does not plan wasm", "wasm" in run_plan(["crates/server/src/lib.rs"], REAL_GRAPH)[0], False)
+check("a crate only the native server depends on does not plan wasm", "wasm" in run_plan(["crates/adapters/selfhosted/src/lib.rs"], REAL_GRAPH)[0], False)
+check("a crate no binary depends on does not plan wasm", "wasm" in run_plan(["crates/editor/doc/src/lib.rs"], REAL_GRAPH)[0], False)
+# the edge Worker alone: here the Worker does not depend on it, so only its own name can plan the job
+edge_graph = dict(REAL_GRAPH, **{EDGE: {"thrust-contracts"}})
+edge_layout = dict(ADR_0009, **{EDGE: "crates/edge"})
+check("the edge Worker's change plans wasm where the Worker does not depend on it",
+      "wasm" in run_plan(["crates/edge/src/lib.rs"], edge_graph, layout=edge_layout)[0], True)
+check("and it plans no linux, which builds the native binaries", "linux" in run_plan(["crates/edge/src/lib.rs"], edge_graph, layout=edge_layout)[0], False)
+check("the Worker's own change still plans wasm there", "wasm" in run_plan(["crates/worker/src/lib.rs"], edge_graph, layout=edge_layout)[0], True)
 jobs, cells = run_plan(["crates/adapters/selfhosted/src/lib.rs"], REAL_GRAPH)
 check("the self-hosted adapter runs the native cells, pg-adapter and mutants",
       (cells, {"pg-adapter", "mutants"} <= jobs), ({c for c in CELLS if c.startswith("native-")}, True))
@@ -326,7 +343,7 @@ if md.returncode == 0:
     check("every member's own file is that member's", sorted(d for d in dirs if pc.owner(f"{d}/src/lib.rs", dirs) != d), [])
     dir_of = {n: d for d, n in dirs.items()}
     check("REAL_GRAPH's crates are where ADR_0009 puts them", {n: dir_of.get(n) for n in ADR_0009}, ADR_0009)
-    for name in sorted({pc.SUITE, pc.PG_ADAPTER, pc.MUTANTS_BINARY, pc.WORKER, *pc.BUILD_CRATES, *pc.TARGET_BINARY.values()}):
+    for name in sorted({pc.SUITE, pc.PG_ADAPTER, pc.MUTANTS_BINARY, pc.WORKER, *pc.BUILD_CRATES, *pc.WASM_CRATES, *pc.TARGET_BINARY.values()}):
         check(f"{name}, named by the planner, is a crate of the workspace", name in real, True)
     for n in sorted(real):
         jobs, sel, _ = pc.plan([f"{dir_of[n]}/src/lib.rs"], dirs, real, CELLS)
@@ -415,7 +432,7 @@ JOBS_LIST = list(pc.JOBS)
 # What WORKFLOWS holds today. Each stage of the migration edits this line, so the stage's change to the planner shows in this file,
 # and a mutant that empties the map is killed by it.
 EXPECTED_WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint"),
-                      "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux",)}
+                      "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux", "wasm")}
 check("WORKFLOWS is a partition of the jobs", refused(lambda: pc.check_workflows()), None)
 check("WORKFLOWS holds the workflows moved so far, and their jobs", pc.WORKFLOWS, EXPECTED_WORKFLOWS)
 
