@@ -228,7 +228,8 @@ jobs:
         run: sh .github/scripts/check-shell.sh
 
   # yamllint over the YAML the repository maintains (Lint phase, stage 2): that it parses, and that no mapping has a key twice, which no parser
-  # refuses (the last wins; yq accepts it, measured) and which actionlint says only of a workflow. .github/scripts/check-yaml.sh names the files
+  # refuses (the last wins; yq accepts it, measured) and which actionlint says only of a workflow and of an action a workflow uses, so it is
+  # `dependabot.yml`, the compose files and the oracle's configuration that nothing read. .github/scripts/check-yaml.sh names the files
   # (every tracked `*.yml` and `*.yaml` less web/, the records of finished experiments and pnpm's lockfile) and, before it reads one, runs a
   # control: a key written twice and a file that does not parse must be refused, and a file that is only unstyled must pass, which shows that
   # .yamllint.yaml, and not yamllint's default (1,328 findings of style here), is the configuration in effect. yamllint is not on the image and

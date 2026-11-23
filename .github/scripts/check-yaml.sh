@@ -7,8 +7,9 @@
 #   CHECK_YAML_ANY_VERSION=1                           do not hold the binary to YAMLLINT_VERSION (for the tests' stand-in, which has none)
 #
 # FILES. What git tracks as `*.yml` or `*.yaml`, less web/ (the stock app's), the records of finished experiments (.agents/plans/, tools/spike-*,
-# probes/), any node_modules/, and e2e/pnpm-lock.yaml, which pnpm writes. Workflows and composite actions are in: actionlint reads the workflows
-# and the workflow lint reads both, but neither says a key is written twice in an action, and this costs a second to read them.
+# probes/), any node_modules/, and e2e/pnpm-lock.yaml, which pnpm writes. Workflows and composite actions are in too, though actionlint already
+# says a key is duplicated in a workflow, and refuses an action that a workflow uses and whose metadata does not parse (a duplicate key included:
+# measured on the runner); it reads no action that no workflow uses, nor any of the YAML that is not a workflow, and a second reader costs a second.
 #
 # CONFIGURATION. .yamllint.yaml, handed over with -c: the one rule that is on is key-duplicates, and a file that does not parse fails whatever
 # the rules say. Everything else yamllint can say is style, which the owner chose not to enforce.
