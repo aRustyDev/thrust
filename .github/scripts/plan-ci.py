@@ -39,7 +39,8 @@ Then, from the changed crates C and the affected crates A (C and everything that
   * the target of a cell runs its passes when the binary it serves is in A (native-* serve thrust-server, worker-* serve
     thrust-worker), or when the suite itself (thrust-contract-tests) changed.
   * pg-adapter when thrust-adapters-selfhosted is in A; mutants (built on the native server) when thrust-server is in A or the
-    suite changed; workers (the Worker's wasm32 unit tests) when thrust-worker is in A.
+    suite changed; workers (the Worker's wasm32 unit tests) when thrust-worker is in A; linux (the release build of the native
+    server and of `migrate`, build.yml) when thrust-server or thrust-adapters-postgres is in A.
 
 Fails open: a target the map below does not know runs on every change (and says so); `--full` runs everything.
 """
@@ -49,12 +50,12 @@ import json
 import re
 import sys
 
-JOBS = ("ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "web", "docs")
+JOBS = ("ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "web", "docs")
 
 # The called workflow each job belongs to (ADR-0102): {workflow: (its jobs)}. A job in none is still a job of ci.yml itself. Every
 # migration stage moves its jobs in here; a job may be in one workflow only, and a name here must be one of JOBS (check_workflows).
 # ci.yml's `gate` lists these workflows too, as VERDICT_JOBS, and test_plan_ci.py holds the two equal.
-WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint"), "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")}
+WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint"), "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux",)}
 
 # The binary each target of scripts/contract.sh starts. Everything a cell runs against is built from it.
 TARGET_BINARY = {
@@ -67,6 +68,8 @@ SUITE = "thrust-contract-tests"
 PG_ADAPTER = "thrust-adapters-selfhosted"
 MUTANTS_BINARY = "thrust-server"
 WORKER = "thrust-worker"
+# The crates whose binaries the `linux` job builds (build.yml): the native server, and the crate of the `migrate` binary.
+BUILD_CRATES = ("thrust-server", "thrust-adapters-postgres")
 
 FULL = "full"
 CRATE = "crate"
@@ -78,7 +81,7 @@ RULES = [
     (r"^\.(cargo|config)/", FULL, "Cargo's or nextest's configuration"),
     # every workflow file that runs the checks `gate` waits for: today's two, and the ones the migration adds (ADR-0102). test_plan_ci.py
     # lists .github/workflows/ and fails for a file that is neither here nor among the ones that run no check.
-    (r"^\.github/workflows/(ci|contract-cell|test|lint|documentation|security|web)\.yml$", FULL, "the workflow that runs the checks"),
+    (r"^\.github/workflows/(ci|contract-cell|test|lint|documentation|security|web|build)\.yml$", FULL, "the workflow that runs the checks"),
     (r"^\.github/actions/setup-rust/", FULL, "the action every Rust job sets up with"),
     (r"^\.github/actions/contract-pass-tools/", FULL, "the action that prepares a contract cell's pass (uv, the app, the browser)"),
     (r"^\.github/actions/verdict/", FULL, "the action every called workflow judges its jobs with (ci.yml's gate requires its output)"),
@@ -269,6 +272,8 @@ def plan(paths, dirs, deps, cells, full_reason=None):
         jobs.add("mutants")
     if WORKER in hit:
         jobs.add("workers")
+    if any(crate in hit for crate in BUILD_CRATES):
+        jobs.add("linux")
 
     selected = []
     for cell in cells:
