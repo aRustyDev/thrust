@@ -303,7 +303,17 @@ async fn migrate_atomic_inner(
                      AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members m WHERE m.member = r.oid)) \
                  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace n WHERE n.nspname <> $2::text \
                      AND pg_catalog.left(n.nspname, 8) <> 'pg_temp_' AND pg_catalog.left(n.nspname, 14) <> 'pg_toast_temp_' \
-                     AND pg_catalog.has_schema_privilege(current_user, n.oid, 'CREATE'))",
+                     AND pg_catalog.has_schema_privilege(current_user, n.oid, 'CREATE')) \
+                 AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+                     WHERE n.nspname <> $2::text AND n.nspname NOT LIKE 'pg\\_%' ESCAPE '\\' AND n.nspname <> 'information_schema' \
+                     AND c.relkind IN ('r', 'p', 'v', 'm', 'f') \
+                     AND pg_catalog.has_table_privilege(current_user, c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')) \
+                 AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+                     WHERE n.nspname <> $2::text AND n.nspname NOT LIKE 'pg\\_%' ESCAPE '\\' AND n.nspname <> 'information_schema' \
+                     AND c.relkind = 'S' AND pg_catalog.has_sequence_privilege(current_user, c.oid, 'SELECT, USAGE, UPDATE')) \
+                 AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
+                     WHERE n.nspname <> $2::text AND n.nspname NOT LIKE 'pg\\_%' ESCAPE '\\' AND n.nspname <> 'information_schema' \
+                     AND p.prosecdef AND pg_catalog.has_function_privilege(current_user, p.oid, 'EXECUTE'))",
                 &[&database, &role],
             ).await?;
             if !row.try_get::<_, Option<bool>>(0)?.unwrap_or(false) {

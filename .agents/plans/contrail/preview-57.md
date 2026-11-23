@@ -47,8 +47,11 @@ exercised password-update recovery; the interrupted-update path still needs an A
    role attributes and memberships, and schema/database CREATE privileges inside the locked
    transaction before applying an artifact. This is not a complete audit of table, function,
    or other grants; the restricted-role bootstrap and its live privileges remain independent
-   security boundaries. A closed-by-default `preview-migration-executor` Worker now connects a
-   configured per-PR Hyperdrive to this entry point and checks bounded artifact data. Its local
+   security boundaries. The preview identity gate also refuses inherited access to relations or
+   sequences outside the preview schema (including `public`) and executable non-system
+   `SECURITY DEFINER` routines, before any migration SQL runs. A closed-by-default
+   `preview-migration-executor` Worker now connects a configured per-PR Hyperdrive to this entry
+   point and checks bounded artifact data. Its local
    Worker-runtime test covers disabled configuration, a mismatched binding, malformed data and
    an unavailable database; it is part of the PostgreSQL CI job. The template has no route and
    no deployment workflow. Before enabling it, a trusted caller must prove artifact provenance,
