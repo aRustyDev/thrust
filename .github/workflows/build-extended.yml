@@ -54,3 +54,22 @@ jobs:
         with:
           name: macos
           target: aarch64-apple-darwin
+
+  # x86_64-pc-windows-msvc, on a hosted Windows runner (windows-2025: four vCPUs, 16 GB; the standard runners are free in a public repository). Nothing else in CI
+  # runs on Windows, and nothing here is developed on it, so a break that only this target sees (an API that only Unix has, a C dependency that does not build
+  # with MSVC, a script of the build that cannot run under Git Bash) would be found by the first person to try. Not a required check, as macos is not: that was
+  # the owner's decision for macOS, and the Windows build is put here on the same reasoning, until the owner says otherwise. The binaries end in `.exe`.
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/build-native
+        with:
+          name: windows
+          target: x86_64-pc-windows-msvc
+          exe: .exe
