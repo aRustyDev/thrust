@@ -10,7 +10,10 @@
 #   4. THE CONTROL: a shellcheck that passes everything (not looking), one that refuses the unquoted variable without a code, one that refuses a
 #      single-quoted `$` (the configuration was not read), and one that refuses a clean script are each refused, before any script is read;
 #   5. THE RESULT: a finding is exit 1, and a clean tree is exit 0;
-#   6. with the real shellcheck, when it is exactly the pinned version: the real control, a real finding and a real clean tree.
+#   6. with the real shellcheck, when it is exactly the pinned version: the real control, a real finding and a real clean tree;
+#   7. the run blocks of the composite actions, cut out with the real yq and jq: which files are actions, a block's finding (named by action, line
+#      and step), the dialect of a block's `shell:`, yq and grep disagreeing on the number of blocks, a shell shellcheck does not read, a yq or
+#      jq that is missing or the wrong yq, and a shellcheck that passes a block with the unquoted variable (the control refuses it).
 # Every check has a control: a deliberately broken copy of the helper that the same check must reject (AGENTS.md rule 8).
 #
 #   test-check-shell.sh
@@ -55,6 +58,9 @@ for a in "$@"; do
     bad.sh) if [ "$mode" = silent ]; then echo "refused, and no code"; else echo "In $a line 3: SC2086 (info): Double quote to prevent globbing"; fi; status=1 ;;
     idiom.sh) if [ "$mode" = unconfigured ]; then echo "In $a line 2: SC2016 (info): Expressions do not expand in single quotes"; status=1; fi ;;
     good.sh) if [ "$mode" = fussy ]; then echo "In $a: refused a clean script"; status=1; fi ;;
+    [0-9]*.sh) # a run block of a composite action, written out by the helper
+      if [ "$mode" = blind-blocks ]; then :; elif grep -q -e FIXTURE-FINDING -e '^ls \$x$' "$a"; then echo "In $a line 1: SC2086 (info): a finding"; status=1; fi ;;
+    check-shell.sh) ;; # the helper's own copy in a fixture: its text holds the control's scripts
     *) if grep -q FIXTURE-FINDING "$a"; then echo "In $a line 1: SC2086 (info): a finding"; status=1; fi ;;
   esac
 done
@@ -121,11 +127,12 @@ control "listing: a shebang through env is read as the shell it names" list_is_r
 args_are_right() { # args_are_right <dir>
   rm -f "$T/args"
   FAKE_ARGS="$T/args" FAKE_MODE=judge FAKE_VERSION="$PINNED" SHELLCHECK="$FAKE" sh "$1/.github/scripts/check-shell.sh" > /dev/null || return 1
-  # the control's three files come first (they sit in a temporary directory), then the rc file and the scripts, in git's order
-  got="$(grep -v -e '/bad.sh$' -e '/idiom.sh$' -e '/good.sh$' "$T/args" | LC_ALL=C sort)"
+  # the control's three scripts and three run blocks come first (they sit in a temporary directory, the blocks with a `-s bash` each), then the
+  # rc file and the scripts, in git's order
+  got="$(grep -v -e '/bad.sh$' -e '/idiom.sh$' -e '/good.sh$' -e '/blocks/[0-9]*\.sh$' -e '^-s$' -e '^bash$' "$T/args" | LC_ALL=C sort)"
   want="$(printf '%s\n' "--rcfile=$1/.shellcheckrc" | cat - "$EXPECTED" | LC_ALL=C sort)"
-  # the control passes the rc file too: it is handed over once per call, and there are four calls (three control files, then the scripts)
-  [ "$(grep -c -e '^--rcfile=' "$T/args")" = 4 ] || { echo "the rc file was handed over $(grep -c -e '^--rcfile=' "$T/args") times, not 4"; return 1; }
+  # the rc file is handed over once per call: three control scripts, three control blocks, then the scripts of the tree (a tree with no action has no block)
+  [ "$(grep -c -e '^--rcfile=' "$T/args")" = 7 ] || { echo "the rc file was handed over $(grep -c -e '^--rcfile=' "$T/args") times, not 7"; return 1; }
   [ "$(printf '%s\n' "$got" | sort -u)" = "$(printf '%s\n' "$want" | sort -u)" ] || { echo "got:"; echo "$got"; echo "wanted:"; echo "$want"; return 1; }
   [ "$(grep -c 'dir with space/b.sh$' "$T/args")" = 1 ] || { echo "the name with a blank in it was not one argument"; return 1; }
 }
@@ -179,10 +186,103 @@ control "self-test: it goes on to read the scripts" self_test_stops "$T/m-selfte
 
 # 5. the result
 dirty="$T/dirty"; cp -R "$tree" "$dirty"; printf 'FIXTURE-FINDING\n' >> "$dirty/infra/x.sh"
-check "a finding in a script is exit 1, and the output says so" refuses 1 "findings above" "$dirty" FAKE_VERSION="$PINNED"
-mutant m-exit '/findings above/{n;s/exit 1/exit 0/;}'
+check "a finding in a script is exit 1, and the output says so" refuses 1 "the findings are above" "$dirty" FAKE_VERSION="$PINNED"
+mutant m-exit '/the findings are above/{n;s/exit 1/exit 0/;}'
 cp -R "$dirty/infra" "$T/m-exit/"
-control "result: a finding is exit 0" refuses 1 "findings above" "$T/m-exit" FAKE_VERSION="$PINNED"
+control "result: a finding is exit 0" refuses 1 "the findings are above" "$T/m-exit" FAKE_VERSION="$PINNED"
+
+# 7. the composite actions' run blocks, cut out with the real yq and jq (the runner image has both)
+if command -v yq > /dev/null 2>&1 && yq --version 2>&1 | grep -q mikefarah && command -v jq > /dev/null 2>&1; then
+  mkact() { # mkact <dir> <name>: a composite action; its steps come on stdin
+    mkdir -p "$1/.github/actions/$2"
+    { printf 'name: %s\ndescription: a fixture\nruns:\n  using: composite\n  steps:\n' "$2"; cat; } > "$1/.github/actions/$2/action.yml"
+  }
+  atree="$T/atree"; fixture "$atree"; put "$atree" a.sh 644 '#!/bin/sh'
+  mkact "$atree" clean << 'EOF'
+    - name: One
+      shell: bash
+      run: echo one
+    - name: Two
+      shell: bash
+      run: |
+        echo two
+EOF
+  mkact "$atree" posix << 'EOF'
+    - name: Posix
+      shell: sh
+      run: echo posix
+EOF
+  mkdir -p "$atree/.github/actions/notes"; printf 'steps: []\n' > "$atree/.github/actions/notes/other.yml"; printf '# x\n' > "$atree/.github/actions/README.md"
+  git -C "$atree" add -A
+  adirty="$T/adirty"; cp -R "$atree" "$adirty"
+  mkact "$adirty" dirty << 'EOF'
+    - name: Fine
+      shell: bash
+      run: echo fine
+    - name: Second
+      shell: bash
+      run: |
+        echo FIXTURE-FINDING
+EOF
+  git -C "$adirty" add -A
+  actions_are_right() { # actions_are_right <dir> <list...>: --list-actions prints exactly these
+    ar="$1"; shift
+    got="$(sh "$ar/.github/scripts/check-shell.sh" --list-actions | LC_ALL=C sort)"
+    [ "$got" = "$(printf '%s\n' "$@" | LC_ALL=C sort)" ] || { echo "listed: $got"; return 1; }
+  }
+  check "the composite actions are the action.yml files under .github/actions/ and no other file" actions_are_right "$atree" .github/actions/clean/action.yml .github/actions/posix/action.yml
+  mutant m-actions "s|ls-files '.github/actions/\*/action.yml'|ls-files 'nothing'|"
+  rm -rf "$T/m-actions/.github/actions"; cp -R "$atree/.github/actions" "$T/m-actions/.github/"; git -C "$T/m-actions" add -A
+  control "actions: none are found" actions_are_right "$T/m-actions" .github/actions/clean/action.yml .github/actions/posix/action.yml
+  check "a run block with a finding refuses the run, names the action, the line of the block and the step" refuses 1 "dirty/action.yml, the run block at line" "$adirty" FAKE_VERSION="$PINNED"
+  check "and the step's name" refuses 1 "(Second)" "$adirty" FAKE_VERSION="$PINNED"
+  check "clean actions pass, and the summary counts their blocks" refuses 0 "3 run blocks of 2 composite actions, no finding" "$atree" FAKE_VERSION="$PINNED"
+  mutant m-blocks 's/check_blocks "\$ROOT" "\$T\/actions" || blocks_status=\$?/check_blocks "$ROOT" "$T\/actions" || true/'
+  rm -rf "$T/m-blocks/.github/actions"; cp -R "$adirty/.github/actions" "$T/m-blocks/.github/"; git -C "$T/m-blocks" add -A
+  control "blocks: a finding in a run block is not a failure" refuses 1 "dirty/action.yml, the run block at line" "$T/m-blocks" FAKE_VERSION="$PINNED"
+  dialect_is_right() { # dialect_is_right <dir>: the block of `shell: sh` is read as sh, and the blocks of `shell: bash` as bash
+    rm -f "$T/args"
+    FAKE_ARGS="$T/args" FAKE_MODE=judge FAKE_VERSION="$PINNED" SHELLCHECK="$FAKE" sh "$1/.github/scripts/check-shell.sh" > /dev/null || return 1
+    [ "$(grep -c -x sh "$T/args")" = 1 ] || { echo "sh was named $(grep -c -x sh "$T/args") times, not once"; return 1; }
+  }
+  check "a block is read in the dialect of its shell:" dialect_is_right "$atree"
+  mutant m-dialect 's/-s "\$shell"/-s bash/'
+  rm -rf "$T/m-dialect/.github/actions"; cp -R "$atree/.github/actions" "$T/m-dialect/.github/"; git -C "$T/m-dialect" add -A
+  control "dialect: every block is read as bash" dialect_is_right "$T/m-dialect"
+  # a `run:` key that yq does not count (a line of a block's text) makes grep and yq disagree, and the run is refused (exit 2), and not trusted
+  anest="$T/anest"; cp -R "$atree" "$anest"
+  mkact "$anest" nested << 'EOF'
+    - name: Heredoc
+      shell: bash
+      run: |
+        cat << 'X'
+          run: nested
+        X
+EOF
+  git -C "$anest" add -A
+  check "yq and grep disagreeing on the number of blocks is refused" refuses 2 "yq found 1 run blocks and grep found 2" "$anest" FAKE_VERSION="$PINNED"
+  mutant m-count 's/\[ "\$found" = "\$expected" \] ||/true ||/'
+  rm -rf "$T/m-count/.github/actions"; cp -R "$anest/.github/actions" "$T/m-count/.github/"; git -C "$T/m-count" add -A
+  control "count: the disagreement is not refused" refuses 2 "yq found 1 run blocks and grep found 2" "$T/m-count" FAKE_VERSION="$PINNED"
+  apy="$T/apy"; cp -R "$atree" "$apy"
+  mkact "$apy" python << 'EOF'
+    - name: Py
+      shell: python
+      run: print("hi")
+EOF
+  git -C "$apy" add -A
+  check "a block in a shell shellcheck does not read is refused" refuses 2 "a step runs in python" "$apy" FAKE_VERSION="$PINNED"
+  mutant m-shell 's/case "\$shell" in sh | bash) ;;/case "$shell" in *) ;;/'
+  rm -rf "$T/m-shell/.github/actions"; cp -R "$apy/.github/actions" "$T/m-shell/.github/"; git -C "$T/m-shell" add -A
+  control "shell: a block in python is read" refuses 2 "a step runs in python" "$T/m-shell" FAKE_VERSION="$PINNED"
+  check "a yq that is not there is refused" refuses 2 "no /nonexistent/yq" "$atree" FAKE_VERSION="$PINNED" YQ=/nonexistent/yq
+  check "a jq that is not there is refused" refuses 2 "no /nonexistent/jq" "$atree" FAKE_VERSION="$PINNED" JQ=/nonexistent/jq
+  printf '#!/bin/sh\necho "yq 3.4.1"\n' > "$T/yq-python"; chmod +x "$T/yq-python"
+  check "a yq that is not mikefarah's is refused" refuses 2 "is not mikefarah's" "$atree" FAKE_VERSION="$PINNED" YQ="$T/yq-python"
+  check "a shellcheck that passes the run blocks of an action with an unquoted variable is refused by the control" refuses 1 "a composite action whose run block has an unquoted variable was passed" "$atree" FAKE_VERSION="$PINNED" FAKE_MODE=blind-blocks
+else
+  echo "skipped: the checks of the composite actions' run blocks need mikefarah's yq and jq (the runner image has both)"
+fi
 
 # 6. the real shellcheck, when it is the pinned version
 real_version="$(shellcheck --version 2> /dev/null | sed -n 's/^version: //p')"
