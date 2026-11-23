@@ -198,7 +198,7 @@ cell on demand and weekly, and `.github/workflows/deep.yml` runs the randomized 
 
 - **A compiler error** is a finding. The ten `worker-cf` cells build the Worker as it ships with the same command, so a break that only `wasm` sees is in the edge Worker, which nothing else builds in release before a release candidate. Reproduce it from `crates/worker` with `../../scripts/rs worker-build --release . --no-default-features`, or from `crates/edge` with `../../scripts/rs worker-build --release .`; the `wasm32-unknown-unknown` target and `worker-build` at the version `setup-rust` pins (`0.9.0`) must be installed.
 - **`worker-build wrote no <dir>/<file>`** means `worker-build` exited 0 and left out one of the three files the shim needs (`worker/shim.mjs` imports `../index.js`, which imports `index_bg.wasm`), or wrote it empty.
-- **A slow run** is a cache that was not restored: read the `rust-cache` step, which says "No cache found" or "Cache hit". A cold run compiles `worker-build` from source (about 106 s); a restored one finds it already installed. `main` saves the cache, and the entries of a repository over its limit are evicted oldest first.
+- **A slow run** is a cache that was not restored: read the `rust-cache` step, which says "No cache found" or "Cache hit". A cold run compiles `worker-build` from source (110 s of a job that takes 238 s); a restored one finds it already installed and takes 79 s (measured 2026-11-23). `main` saves the cache, and the entries of a repository over its limit are evicted oldest first.
 
 ### When a `mutants` leg is red
 
