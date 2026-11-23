@@ -190,7 +190,7 @@ cell on demand and weekly, and `.github/workflows/deep.yml` runs the randomized 
 - **A compiler or linker error** is a finding: the contract cells build `thrust-server` in debug, so a break that only `linux` sees is a break of the release profile (an item behind `cfg(debug_assertions)`, a link-time error under LTO). Reproduce it from the repository root with `scripts/rs cargo build --release --locked -p thrust-server`, or `scripts/rs cargo build --release --locked -p thrust-adapters-postgres --features native --bin migrate` for `migrate`.
 - **`cargo built nothing at target/release/<name>`** means cargo exited 0 and no binary is there: the package or the `[[bin]]` was renamed. The check exists so that a build that makes nothing cannot pass.
 - **`--locked` fails** (`the lock file … needs to be updated but --locked was passed`) because `Cargo.lock` is not what the manifests need: update it with cargo and commit it (`scripts/check-cargo-lock.sh` says whether the file is in the form cargo writes).
-- **A run of 30 minutes** is the job's timeout, and a build that long is a finding. The job's measured time is in `.agents/plans/ci-workflows/phases/0004-build.md` once stage 1 has recorded it.
+- **A run of 30 minutes** is the job's timeout, and a build that long is a finding: the job takes about 134 s with no cache (the server's release build 87 s) and about 100 s with the cache `main` saves (measured 2026-11-23; the details are in `.agents/plans/ci-workflows/phases/0004-build.md`).
 
 ### When a `mutants` leg is red
 
