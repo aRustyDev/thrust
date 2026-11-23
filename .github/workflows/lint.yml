@@ -126,10 +126,18 @@ jobs:
       # index and none for a file that is gone: an index that lists a deleted workflow or omits a new one is a lie (ADR-0102, stage 0.4).
       - name: CI index guard (workflows and actions)
         run: sh .github/scripts/check-ci-index.sh
+      # The shellcheck that actionlint runs over every `run:` block of every workflow, at the version the `bash` job and check-shell.sh hold the
+      # repository's scripts to (test_workflow_wiring.py holds the three equal). Without this step actionlint takes the image's, 0.9.0, which does
+      # not know SC2329 and the codes after it: a workflow's shell was read by an older shellcheck than the scripts' (Lint phase, stage 1, probe C).
+      # The step before the actionlint one, because lint-actionlint.sh hands actionlint the shellcheck on PATH and refuses a run that has none.
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: shellcheck@0.11.0
       # actionlint checks every workflow, and each call of a called workflow: the `with:` it passes against the callee's inputs, and the
-      # outputs it reads through `needs`. It is installed from its own release, because taiki-e/install-action, which installs the other
-      # tools here, does not offer it. lint-actionlint.sh runs it only inside this checkout, where it finds the project (in a plain
-      # directory it checks nothing and says nothing), and first proves that it refuses a call that breaks the contract (research 0018, F11).
+      # outputs it reads through `needs`, and the shell of each `run:` block, with the shellcheck above. It is installed from its own release,
+      # because taiki-e/install-action, which installs the other tools here, does not offer it. lint-actionlint.sh runs it only inside this
+      # checkout, where it finds the project (in a plain directory it checks nothing and says nothing), and first proves that it refuses a call
+      # that breaks the contract, an unquoted variable and a function never called, which only the pinned shellcheck says (research 0018, F11).
       - name: actionlint (every workflow), and the control that shows it is looking
         env:
           ACTIONLINT_VERSION: "1.7.12"
