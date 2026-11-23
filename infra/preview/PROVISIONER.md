@@ -1,5 +1,10 @@
 # Preview provisioner database bootstrap
 
+> This documents the current shared-`thrust-pg-dev` schema provisioner. It is a legacy
+> transition path, not the isolation model for Preview migrations. The replacement contract is
+> [snapshot plus per-PR database clusters](CLUSTER_CONTROL_PLANE.md); do not switch the live
+> reconciler until its controller activation requirements have been met.
+
 `provisioner-bootstrap.sql` installs the restricted login and its database functions. It
 must be run once, by a trusted superuser on the `thrust` database of `thrust-pg-dev`. The caller
 must pass `THRUST_PREVIEW_PROVISIONER_PASSWORD` and `THRUST_PR_ROLE_CONNECTION_LIMIT` in the psql
