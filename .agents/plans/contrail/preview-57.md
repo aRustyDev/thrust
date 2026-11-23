@@ -37,6 +37,12 @@ PR's close. A changed fingerprint creates a candidate lease while the existing r
 attached. Persistence, Kubernetes/CNPG actions, receipts and atomic active-candidate switching
 remain to be implemented.
 
+The durable request/persistence format is now a bounded, versioned JSON document. It holds only
+the PR lease and the trusted artifact/bootstrap digests needed to recompute its identity; it
+refuses unknown fields, forged derived names and malformed bytes, and contains neither database
+credentials nor Kubernetes/Cloudflare tokens. The existing fuzz target replays both a valid lease
+seed and malformed request inputs. It is not an authenticated network endpoint yet.
+
 The active PR cluster must have controller-owned CPU/memory limits, `storage` and `walStorage`
 PVC capacities, a connection ceiling, and a dedicated namespace aggregate `ResourceQuota`. The
 last protects the preview fleet; the individual Cluster/PVC and Pod limits protect each Preview.
