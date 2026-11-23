@@ -1,19 +1,238 @@
 //! Validation for the internal preview provisioner. Access is enforced at the Cloudflare edge.
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+pub const CLUSTER_LEASE_API_VERSION: &str = "thrust.dev/preview-cluster-lease/v1";
+pub const CLUSTER_RECEIPT_API_VERSION: &str = "thrust.dev/preview-cluster-receipt/v1";
+const MAX_CLUSTER_LEASE_DOCUMENT_BYTES: usize = 4096;
+const MAX_CLUSTER_RECEIPT_DOCUMENT_BYTES: usize = 8192;
 
 /// An immutable plan for one preview's disposable database cluster.
 ///
 /// A plan deliberately identifies two different things: a base snapshot, which may be reused
 /// when its trusted migration inputs are byte-for-byte identical, and a live cluster, which is
 /// unique to the PR. A caller must never use `base_snapshot` as a live database identifier.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct PreviewClusterPlan {
     pub number: i32,
+    pub migration_artifact_sha256: String,
+    pub postgres_major: u16,
+    pub bootstrap_sha256: String,
     pub fingerprint: String,
     pub base_snapshot: String,
     pub cluster: String,
+    pub vpc_service: String,
+    pub hyperdrive: String,
     pub idempotency_key: String,
+}
+
+/// Persisted phase of one PR's preview-cluster lease.
+///
+/// The future Kubernetes-side controller stores this alongside the non-secret resource receipt.
+/// It must not infer a phase from resource names: an interrupted operation is indistinguishable
+/// from a completed one without durable lease state.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClusterLeasePhase {
+    Provisioning,
+    Ready,
+    Deleting,
+}
+
+/// A PR-local lease for the named mutable cluster. Shared base snapshots are not leased here and
+/// therefore cannot be deleted as a side effect of closing one PR.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PreviewClusterLease {
+    pub plan: PreviewClusterPlan,
+    pub phase: ClusterLeasePhase,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ClusterLeaseDocument {
+    api_version: String,
+    lease: PreviewClusterLease,
+}
+
+/// A non-secret receipt an authenticated controller returns only after it has verified every
+/// named live resource. Deployment code uses it as a binding contract, not as a credential.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PreviewClusterReceipt {
+    pub lease: PreviewClusterLease,
+    pub cluster_uid: String,
+    pub vpc_service_id: String,
+    pub hyperdrive_id: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ClusterReceiptDocument {
+    api_version: String,
+    receipt: PreviewClusterReceipt,
+}
+
+impl PreviewClusterLease {
+    pub fn provisioning(plan: PreviewClusterPlan) -> Self {
+        Self { plan, phase: ClusterLeasePhase::Provisioning }
+    }
+
+    pub fn request_deletion(&mut self) {
+        self.phase = ClusterLeasePhase::Deleting;
+    }
+
+    /// Produces a candidate lease for a changed trusted fingerprint.
+    ///
+    /// A controller keeps the current ready lease attached while it provisions this candidate,
+    /// then switches the active receipt atomically. It must reject a replacement request while
+    /// deletion is in progress.
+    pub fn replacement_candidate(&self, plan: PreviewClusterPlan) -> Option<Self> {
+        if self.phase == ClusterLeasePhase::Deleting || self.plan == plan {
+            return None;
+        }
+        Some(Self::provisioning(plan))
+    }
+}
+
+/// Parses a bounded, versioned durable lease document without accepting credentials or a caller
+/// selected quota profile. The Kubernetes-side controller still authenticates the caller before
+/// persisting the returned lease.
+pub fn parse_cluster_lease(bytes: &[u8]) -> Option<PreviewClusterLease> {
+    if bytes.len() > MAX_CLUSTER_LEASE_DOCUMENT_BYTES {
+        return None;
+    }
+    let document: ClusterLeaseDocument = serde_json::from_slice(bytes).ok()?;
+    if document.api_version != CLUSTER_LEASE_API_VERSION || !document.lease.plan.is_valid() {
+        return None;
+    }
+    Some(document.lease)
+}
+
+/// Encodes the non-secret lease state for controller persistence or an authenticated internal
+/// request. It refuses to emit a caller-forged plan.
+pub fn encode_cluster_lease(lease: &PreviewClusterLease) -> Option<Vec<u8>> {
+    if !lease.plan.is_valid() {
+        return None;
+    }
+    serde_json::to_vec(&ClusterLeaseDocument {
+        api_version: CLUSTER_LEASE_API_VERSION.to_owned(),
+        lease: lease.clone(),
+    })
+    .ok()
+}
+
+/// Parses a bounded receipt and accepts it only when its lease is ready and all opaque platform
+/// identifiers are non-secret, bounded identifiers. The controller must perform the live API
+/// identity checks before it emits this receipt.
+pub fn parse_cluster_receipt(bytes: &[u8]) -> Option<PreviewClusterReceipt> {
+    if bytes.len() > MAX_CLUSTER_RECEIPT_DOCUMENT_BYTES {
+        return None;
+    }
+    let document: ClusterReceiptDocument = serde_json::from_slice(bytes).ok()?;
+    let receipt = document.receipt;
+    if document.api_version != CLUSTER_RECEIPT_API_VERSION
+        || receipt.lease.phase != ClusterLeasePhase::Ready
+        || !receipt.lease.plan.is_valid()
+        || !opaque_id(&receipt.cluster_uid)
+        || !opaque_id(&receipt.vpc_service_id)
+        || !opaque_id(&receipt.hyperdrive_id)
+    {
+        return None;
+    }
+    Some(receipt)
+}
+
+/// Encodes a validated, non-secret receipt for the Preview deployment path.
+pub fn encode_cluster_receipt(receipt: &PreviewClusterReceipt) -> Option<Vec<u8>> {
+    if receipt.lease.phase != ClusterLeasePhase::Ready
+        || !receipt.lease.plan.is_valid()
+        || !opaque_id(&receipt.cluster_uid)
+        || !opaque_id(&receipt.vpc_service_id)
+        || !opaque_id(&receipt.hyperdrive_id)
+    {
+        return None;
+    }
+    serde_json::to_vec(&ClusterReceiptDocument {
+        api_version: CLUSTER_RECEIPT_API_VERSION.to_owned(),
+        receipt: receipt.clone(),
+    })
+    .ok()
+}
+
+/// The non-secret resource facts checked on every controller retry.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ClusterLeaseInventory {
+    pub snapshot: bool,
+    pub cluster: bool,
+    pub connectivity: bool,
+}
+
+/// Why inventory cannot be safely reconciled automatically.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClusterLeaseDrift {
+    ClusterWithoutSnapshot,
+    ConnectivityWithoutCluster,
+    ReadyLeaseIsIncomplete,
+}
+
+/// One idempotent controller action. The executor records the outcome before the next call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ClusterLeaseAction {
+    EnsureSnapshot { snapshot: String },
+    EnsureCluster { cluster: String },
+    EnsureConnectivity { cluster: String },
+    MarkReady,
+    DeleteConnectivity { cluster: String },
+    DeleteCluster { cluster: String },
+    DeleteLease,
+    Refuse(ClusterLeaseDrift),
+    Noop,
+}
+
+/// Selects at most one safe action for a lease retry.
+///
+/// Provisioning advances snapshot -> cluster -> connectivity -> durable ready receipt. A partial
+/// inventory is never repaired by guessing: the controller must inspect the resource receipt and
+/// recover deliberately. Deletion reverses the mutable dependency order and intentionally leaves
+/// the fingerprint-keyed snapshot for other active leases or the snapshot garbage collector.
+pub fn reconcile_cluster_lease(lease: &PreviewClusterLease, inventory: ClusterLeaseInventory) -> ClusterLeaseAction {
+    if lease.phase == ClusterLeasePhase::Deleting {
+        if inventory.connectivity {
+            return ClusterLeaseAction::DeleteConnectivity { cluster: lease.plan.cluster.clone() };
+        }
+        if inventory.cluster {
+            return ClusterLeaseAction::DeleteCluster { cluster: lease.plan.cluster.clone() };
+        }
+        return ClusterLeaseAction::DeleteLease;
+    }
+
+    if inventory.connectivity && !inventory.cluster {
+        return ClusterLeaseAction::Refuse(ClusterLeaseDrift::ConnectivityWithoutCluster);
+    }
+    if inventory.cluster && !inventory.snapshot {
+        return ClusterLeaseAction::Refuse(ClusterLeaseDrift::ClusterWithoutSnapshot);
+    }
+
+    if lease.phase == ClusterLeasePhase::Ready {
+        return if inventory.snapshot && inventory.cluster && inventory.connectivity {
+            ClusterLeaseAction::Noop
+        } else {
+            ClusterLeaseAction::Refuse(ClusterLeaseDrift::ReadyLeaseIsIncomplete)
+        };
+    }
+
+    if !inventory.snapshot {
+        return ClusterLeaseAction::EnsureSnapshot { snapshot: lease.plan.base_snapshot.clone() };
+    }
+    if !inventory.cluster {
+        return ClusterLeaseAction::EnsureCluster { cluster: lease.plan.cluster.clone() };
+    }
+    if !inventory.connectivity {
+        return ClusterLeaseAction::EnsureConnectivity { cluster: lease.plan.cluster.clone() };
+    }
+    ClusterLeaseAction::MarkReady
 }
 
 /// Computes the names a Kubernetes-side preview-cluster controller must use.
@@ -46,8 +265,34 @@ pub fn preview_cluster_plan(
     let cluster_suffix = fingerprint.get(..12)?;
     let base_snapshot = format!("thrust-preview-base-pg{postgres_major}-{snapshot_suffix}");
     let cluster = format!("thrust-preview-pr-{number}-{cluster_suffix}");
+    let vpc_service = cluster.clone();
+    let hyperdrive = cluster.clone();
     let idempotency_key = format!("preview/{number}/{fingerprint}");
-    Some(PreviewClusterPlan { number, fingerprint, base_snapshot, cluster, idempotency_key })
+    Some(PreviewClusterPlan {
+        number,
+        migration_artifact_sha256: migration_artifact_sha256.to_owned(),
+        postgres_major,
+        bootstrap_sha256: bootstrap_sha256.to_owned(),
+        fingerprint,
+        base_snapshot,
+        cluster,
+        vpc_service,
+        hyperdrive,
+        idempotency_key,
+    })
+}
+
+fn opaque_id(value: &str) -> bool {
+    (1..=128).contains(&value.len())
+        && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+}
+
+impl PreviewClusterPlan {
+    pub fn is_valid(&self) -> bool {
+        preview_cluster_plan(self.number, &self.migration_artifact_sha256, self.postgres_major, &self.bootstrap_sha256)
+            .as_ref()
+            == Some(self)
+    }
 }
 
 fn parse_sha256(value: &str) -> Option<[u8; 32]> {
@@ -144,6 +389,76 @@ mod tests {
             .prop_map(|bytes| bytes.into_iter().map(char::from).collect())
     }
 
+    fn lease(number: i32, phase: ClusterLeasePhase) -> PreviewClusterLease {
+        let digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let plan = match preview_cluster_plan(number, digest, 16, digest) {
+            Some(plan) => plan,
+            None => unreachable!(),
+        };
+        PreviewClusterLease { plan, phase }
+    }
+
+    fn receipt(number: i32) -> PreviewClusterReceipt {
+        PreviewClusterReceipt {
+            lease: lease(number, ClusterLeasePhase::Ready),
+            cluster_uid: "cnpg-cluster-uid-42".to_owned(),
+            vpc_service_id: "cloudflare-vpc-service-42".to_owned(),
+            hyperdrive_id: "cloudflare-hyperdrive-42".to_owned(),
+        }
+    }
+
+    fn model_action(phase: ClusterLeasePhase, inventory: ClusterLeaseInventory) -> &'static str {
+        if phase == ClusterLeasePhase::Deleting {
+            return if inventory.connectivity {
+                "delete-connectivity"
+            } else if inventory.cluster {
+                "delete-cluster"
+            } else {
+                "delete-lease"
+            };
+        }
+        if inventory.connectivity && !inventory.cluster {
+            return "refuse-connectivity-without-cluster";
+        }
+        if inventory.cluster && !inventory.snapshot {
+            return "refuse-cluster-without-snapshot";
+        }
+        if phase == ClusterLeasePhase::Ready {
+            return if inventory.snapshot && inventory.cluster && inventory.connectivity {
+                "noop"
+            } else {
+                "refuse-ready-incomplete"
+            };
+        }
+        if !inventory.snapshot {
+            "ensure-snapshot"
+        } else if !inventory.cluster {
+            "ensure-cluster"
+        } else if !inventory.connectivity {
+            "ensure-connectivity"
+        } else {
+            "mark-ready"
+        }
+    }
+
+    fn action_name(action: &ClusterLeaseAction) -> &'static str {
+        match action {
+            ClusterLeaseAction::EnsureSnapshot { .. } => "ensure-snapshot",
+            ClusterLeaseAction::EnsureCluster { .. } => "ensure-cluster",
+            ClusterLeaseAction::EnsureConnectivity { .. } => "ensure-connectivity",
+            ClusterLeaseAction::MarkReady => "mark-ready",
+            ClusterLeaseAction::DeleteConnectivity { .. } => "delete-connectivity",
+            ClusterLeaseAction::DeleteCluster { .. } => "delete-cluster",
+            ClusterLeaseAction::DeleteLease => "delete-lease",
+            ClusterLeaseAction::Refuse(ClusterLeaseDrift::ClusterWithoutSnapshot) => "refuse-cluster-without-snapshot",
+            ClusterLeaseAction::Refuse(ClusterLeaseDrift::ConnectivityWithoutCluster) => {
+                "refuse-connectivity-without-cluster"
+            }
+            ClusterLeaseAction::Refuse(ClusterLeaseDrift::ReadyLeaseIsIncomplete) => "refuse-ready-incomplete",
+            ClusterLeaseAction::Noop => "noop",
+        }
+    }
+
     proptest! {
         #[test]
         fn prop_valid_numbers_route(n in 1i32..=999_999_999) {
@@ -221,15 +536,217 @@ mod tests {
                 prop_assert_eq!(plan, None);
             }
         }
+        #[test]
+        fn prop_invalid_preview_number_or_postgres_major_is_refused(
+            number in any::<i32>(),
+            postgres_major in any::<u16>(),
+        ) {
+            let digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+            let plan = preview_cluster_plan(number, digest, postgres_major, digest);
+            if !(1..=999_999_999).contains(&number) || !(14..=18).contains(&postgres_major) {
+                prop_assert_eq!(plan, None);
+            }
+        }
+        #[test]
+        fn prop_cluster_lease_json_round_trips_trusted_plan(
+            artifact in digest_strategy(),
+            bootstrap in digest_strategy(),
+            postgres_major in 14_u16..=18,
+            number in 1_i32..=999_999_999,
+            phase in prop_oneof![Just(ClusterLeasePhase::Provisioning), Just(ClusterLeasePhase::Ready), Just(ClusterLeasePhase::Deleting)],
+        ) {
+            let plan = preview_cluster_plan(number, &artifact, postgres_major, &bootstrap);
+            match plan {
+                Some(plan) => {
+                    let lease = PreviewClusterLease { plan, phase };
+                    let encoded = encode_cluster_lease(&lease);
+                    match encoded {
+                        Some(encoded) => prop_assert_eq!(parse_cluster_lease(&encoded), Some(lease)),
+                        None => prop_assert!(false, "valid lease did not encode"),
+                    }
+                }
+                None => prop_assert!(false, "valid generated plan inputs were refused"),
+            }
+        }
+        #[test]
+        fn prop_cluster_lease_bytes_never_panic(bytes in proptest::collection::vec(any::<u8>(), 0..8192)) {
+            let _ = parse_cluster_lease(&bytes);
+        }
+        #[test]
+        fn prop_cluster_receipt_json_round_trips_ready_lease(
+            artifact in digest_strategy(),
+            bootstrap in digest_strategy(),
+            postgres_major in 14_u16..=18,
+            number in 1_i32..=999_999_999,
+            cluster_uid in "[A-Za-z0-9_-]{1,128}",
+            vpc_service_id in "[A-Za-z0-9_-]{1,128}",
+            hyperdrive_id in "[A-Za-z0-9_-]{1,128}",
+        ) {
+            let plan = preview_cluster_plan(number, &artifact, postgres_major, &bootstrap);
+            match plan {
+                Some(plan) => {
+                    let receipt = PreviewClusterReceipt {
+                        lease: PreviewClusterLease { plan, phase: ClusterLeasePhase::Ready },
+                        cluster_uid,
+                        vpc_service_id,
+                        hyperdrive_id,
+                    };
+                    let encoded = encode_cluster_receipt(&receipt);
+                    match encoded {
+                        Some(encoded) => prop_assert_eq!(parse_cluster_receipt(&encoded), Some(receipt)),
+                        None => prop_assert!(false, "valid receipt did not encode"),
+                    }
+                }
+                None => prop_assert!(false, "valid generated receipt inputs were refused"),
+            }
+        }
+        #[test]
+        fn prop_cluster_receipt_bytes_never_panic(bytes in proptest::collection::vec(any::<u8>(), 0..16384)) {
+            let _ = parse_cluster_receipt(&bytes);
+        }
+        #[test]
+        fn model_cluster_lease_reconciliation_matches_dependency_table(
+            phase in prop_oneof![Just(ClusterLeasePhase::Provisioning), Just(ClusterLeasePhase::Ready), Just(ClusterLeasePhase::Deleting)],
+            snapshots in prop::collection::vec(any::<bool>(), 1..32),
+            clusters in prop::collection::vec(any::<bool>(), 1..32),
+            connectivity in prop::collection::vec(any::<bool>(), 1..32),
+        ) {
+            let lease = lease(42, phase);
+            for ((snapshot, cluster), connectivity) in snapshots.into_iter().zip(clusters).zip(connectivity) {
+                let inventory = ClusterLeaseInventory { snapshot, cluster, connectivity };
+                let action = reconcile_cluster_lease(&lease, inventory);
+                prop_assert_eq!(action_name(&action), model_action(phase, inventory));
+            }
+        }
+    }
+
+    #[test]
+    // Spec example: an uninterrupted create must establish dependencies before publishing ready.
+    fn controller_walks_a_successful_lease_in_dependency_order() {
+        let mut lease = lease(42, ClusterLeasePhase::Provisioning);
+        let mut inventory = ClusterLeaseInventory::default();
+        assert!(matches!(reconcile_cluster_lease(&lease, inventory), ClusterLeaseAction::EnsureSnapshot { .. }));
+        inventory.snapshot = true;
+        assert!(matches!(reconcile_cluster_lease(&lease, inventory), ClusterLeaseAction::EnsureCluster { .. }));
+        inventory.cluster = true;
+        assert!(matches!(reconcile_cluster_lease(&lease, inventory), ClusterLeaseAction::EnsureConnectivity { .. }));
+        inventory.connectivity = true;
+        assert_eq!(reconcile_cluster_lease(&lease, inventory), ClusterLeaseAction::MarkReady);
+        lease.phase = ClusterLeasePhase::Ready;
+        assert_eq!(reconcile_cluster_lease(&lease, inventory), ClusterLeaseAction::Noop);
+    }
+
+    #[test]
+    // Spec example: closing a PR must not delete the shared snapshot.
+    fn controller_never_deletes_a_shared_snapshot_with_a_pr_lease() {
+        let mut lease = lease(42, ClusterLeasePhase::Provisioning);
+        lease.request_deletion();
+        let inventory = ClusterLeaseInventory { snapshot: true, cluster: true, connectivity: true };
+        assert!(matches!(reconcile_cluster_lease(&lease, inventory), ClusterLeaseAction::DeleteConnectivity { .. }));
+        let inventory = ClusterLeaseInventory { snapshot: true, cluster: true, connectivity: false };
+        assert!(matches!(reconcile_cluster_lease(&lease, inventory), ClusterLeaseAction::DeleteCluster { .. }));
+        let inventory = ClusterLeaseInventory { snapshot: true, cluster: false, connectivity: false };
+        assert_eq!(reconcile_cluster_lease(&lease, inventory), ClusterLeaseAction::DeleteLease);
+    }
+
+    #[test]
+    // Spec example: a changed fingerprint is staged while the ready preview remains attached.
+    fn controller_keeps_the_ready_lease_while_a_changed_fingerprint_is_a_candidate() {
+        let ready = lease(42, ClusterLeasePhase::Ready);
+        let mut changed = ready.plan.clone();
+        changed.fingerprint = "e".repeat(64);
+        changed.cluster = "thrust-preview-pr-42-eeeeeeeeeeee".to_owned();
+        changed.idempotency_key = format!("preview/42/{}", "e".repeat(64));
+        let candidate = ready.replacement_candidate(changed.clone());
+        assert_eq!(ready.phase, ClusterLeasePhase::Ready);
+        assert!(matches!(candidate, Some(PreviewClusterLease { phase: ClusterLeasePhase::Provisioning, .. })));
+
+        let deleting = lease(42, ClusterLeasePhase::Deleting);
+        assert_eq!(deleting.replacement_candidate(changed), None);
+    }
+
+    #[test]
+    // Spec example: a durable document must reject an added caller-controlled quota field.
+    fn cluster_lease_document_refuses_unknown_fields() {
+        let lease = lease(42, ClusterLeasePhase::Provisioning);
+        let encoded = encode_cluster_lease(&lease);
+        let Some(mut encoded) = encoded else {
+            panic!("fixed valid lease must encode");
+        };
+        let Some(position) = encoded.iter().position(|byte| *byte == b'}') else {
+            panic!("lease JSON must end in an object");
+        };
+        encoded.splice(position..position, b",\"quota_profile\":\"untrusted\"".iter().copied());
+        assert_eq!(parse_cluster_lease(&encoded), None);
+    }
+
+    #[test]
+    // Spec example: the controller must recompute and reject a forged derived cluster identity.
+    fn cluster_lease_document_refuses_forged_plan_identity() {
+        let lease = lease(42, ClusterLeasePhase::Provisioning);
+        let encoded = encode_cluster_lease(&lease);
+        let Some(encoded) = encoded else {
+            panic!("fixed valid lease must encode");
+        };
+        let document = String::from_utf8(encoded);
+        let Ok(document) = document else {
+            panic!("controller JSON must be UTF-8");
+        };
+        let forged = document.replacen(&lease.plan.cluster, "thrust-preview-pr-42-forged", 1);
+        assert_eq!(parse_cluster_lease(forged.as_bytes()), None);
+    }
+
+    #[test]
+    // Spec example: a receipt cannot make a provisioning lease deployable.
+    fn cluster_receipt_refuses_non_ready_lease() {
+        let mut receipt = receipt(42);
+        receipt.lease.phase = ClusterLeasePhase::Provisioning;
+        assert_eq!(encode_cluster_receipt(&receipt), None);
+        let document = serde_json::to_vec(&ClusterReceiptDocument {
+            api_version: CLUSTER_RECEIPT_API_VERSION.to_owned(),
+            receipt,
+        });
+        let Ok(document) = document else {
+            panic!("test receipt document must encode");
+        };
+        assert_eq!(parse_cluster_receipt(&document), None);
+    }
+
+    #[test]
+    fn model_cluster_lease_inventory_matrix_reaches_every_action_class() {
+        let phases = [ClusterLeasePhase::Provisioning, ClusterLeasePhase::Ready, ClusterLeasePhase::Deleting];
+        let values = [false, true];
+        let mut seen = Vec::new();
+        for phase in phases {
+            for snapshot in values {
+                for cluster in values {
+                    for connectivity in values {
+                        let action = reconcile_cluster_lease(
+                            &lease(42, phase),
+                            ClusterLeaseInventory { snapshot, cluster, connectivity },
+                        );
+                        let name = action_name(&action);
+                        if !seen.contains(&name) {
+                            seen.push(name);
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(seen.len(), 11, "the model input matrix must reach every lease action and refusal class");
     }
     #[test]
     fn fuzz_replay_request_seeds() {
         for bytes in [
             include_bytes!("../fuzz/seeds/request/valid-json").as_slice(),
+            include_bytes!("../fuzz/seeds/request/valid-lease.json").as_slice(),
+            include_bytes!("../fuzz/seeds/request/valid-receipt.json").as_slice(),
             include_bytes!("../fuzz/seeds/request/valid-path").as_slice(),
             b"".as_slice(),
         ] {
             let _ = password(bytes);
+            let _ = parse_cluster_lease(bytes);
+            let _ = parse_cluster_receipt(bytes);
             if let Ok(path) = std::str::from_utf8(bytes) {
                 let _ = route("PUT", path);
             }

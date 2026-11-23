@@ -29,6 +29,26 @@ schema reconciler yet: no in-cluster controller, snapshot-capable storage valida
 service lifecycle, or end-to-end receipt exists, so switching it on would only remove working
 previews without establishing the new isolation.
 
+The first controller component is now executable: `PreviewClusterLease` and
+`reconcile_cluster_lease` model a durable per-PR lease. A retry advances only snapshot -> cluster
+-> connectivity -> ready receipt, rejects contradictory partial inventory, and deletes only
+connectivity -> cluster -> lease. It never deletes a fingerprint-keyed snapshot as part of one
+PR's close. A changed fingerprint creates a candidate lease while the existing ready lease stays
+attached. Persistence, Kubernetes/CNPG actions, receipts and atomic active-candidate switching
+remain to be implemented.
+
+The durable request/persistence format is now a bounded, versioned JSON document. It holds only
+the PR lease and the trusted artifact/bootstrap digests needed to recompute its identity; it
+refuses unknown fields, forged derived names and malformed bytes, and contains neither database
+credentials nor Kubernetes/Cloudflare tokens. The existing fuzz target replays both a valid lease
+seed and malformed request inputs. It is not an authenticated network endpoint yet.
+
+The matching ready-only receipt format now names the derived per-cluster VPC service and
+Hyperdrive configuration and returns only their bounded opaque IDs plus the CNPG cluster UID.
+It validates the lease again and cannot carry a connection string or password. The controller
+must still verify those IDs against Cloudflare/CNPG before emitting it, and the deployment path
+must independently verify the receipt before binding a Preview.
+
 The active PR cluster must have controller-owned CPU/memory limits, `storage` and `walStorage`
 PVC capacities, a connection ceiling, and a dedicated namespace aggregate `ResourceQuota`. The
 last protects the preview fleet; the individual Cluster/PVC and Pod limits protect each Preview.
@@ -52,6 +72,9 @@ Actions and the Cloudflare Worker stay without Kubernetes credentials.
    for interrupted updates. Do not use a tunnel-wide VPC network binding. Upgrade the existing
    VPC service TLS configuration to private-CA `verify_full` before trusting new routes; the
    current development services record an unauthenticated encrypted hop.
+   The Cloudflare root now accepts an additive, protected `preview_vpc_services` map and validates
+   every Preview service name and exact `-rw` hostname; the controller/reconciler still needs to
+   materialize the active lease set into that input and consume the resulting service IDs.
 3. Define and implement a trusted migration execution and credential contract. Migrate the
    exact PR revision as `pr_<n>` through a bounded, authenticated path; never expose the
    provisioner, deployment or cluster database credentials to PR-controlled code. Demonstrate

@@ -20,7 +20,7 @@
 # and scripts/hyperdrive-check.sh.
 
 resource "cloudflare_connectivity_directory_service" "postgres" {
-  for_each = var.vpc_services
+  for_each = merge(var.vpc_services, var.preview_vpc_services)
 
   account_id   = var.cloudflare_account_id
   name         = each.key
