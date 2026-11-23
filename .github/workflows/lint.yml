@@ -1,7 +1,7 @@
 name: lint
 
-# The repository's guards and the Rust lint, called by ci.yml (its `lint` job) and runnable alone (ADR-0102). ci.yml passes `plan`, the jobs
-# of this workflow that plan-ci.py says the change needs (`deps`, `lint`, or both); a run by hand plans them both. The `verdict` job judges
+# The repository's guards, the Rust lint and the shell lint, called by ci.yml (its `lint` job) and runnable alone (ADR-0102). ci.yml passes
+# `plan`, the jobs of this workflow that plan-ci.py says the change needs (`deps`, `lint`, `bash`: any of them); a run by hand plans all. The `verdict` job judges
 # the jobs against that plan, so that a planned job that never ran turns ci.yml's `gate` red: a calling job is `success` when only some of
 # its jobs ran.
 
@@ -21,7 +21,7 @@ on:
       plan:
         description: JSON array of the jobs to run
         type: string
-        default: '["deps","lint"]'
+        default: '["deps","lint","bash"]'
 
 permissions: {}
 
@@ -195,12 +195,36 @@ jobs:
         if: ${{ !cancelled() }}
         run: scripts/rs cargo clippy -p thrust-api-v1 --features openapi --all-targets --locked -- -D warnings
 
+  # shellcheck over the shell the repository maintains (Lint phase, stage 1): every tracked `*.sh` and shell-shebang script, less `web/` and the
+  # records of finished experiments, which .github/scripts/check-shell.sh names, and the `run:` blocks of the composite actions, which actionlint
+  # does not read (yq and jq, both on the image, cut them out). The runner runs the scripts under dash, and no job read them before.
+  # shellcheck is installed at an exact version through install-action (checked against its SHA-256 manifest), and not taken from the image,
+  # which has 0.9.0: the image's version moves with the image, and the helper refuses any version but the one written here and in it
+  # (test_workflow_wiring.py holds the two equal). The helper runs its control first (an unquoted variable must be refused, the repository's
+  # configuration must be the one in effect), so a shellcheck that is not looking fails the job. No Rust toolchain and no cache: it is the
+  # shortest job of the workflow, and runs only when a shell file, .shellcheckrc or the job itself changes (plan-ci.py).
+  bash:
+    if: contains(fromJSON(inputs.plan), 'bash')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: shellcheck@0.11.0
+      - name: shellcheck (the control, then every maintained script)
+        run: sh .github/scripts/check-shell.sh
+
   # ADR-0102: judges this workflow's jobs against the plan, through the action every called workflow uses (it runs assert-gate.sh and
   # sets the output only after that passed). `always()`, so it reports when a job was skipped, failed or cancelled. ci.yml's `gate`
   # requires the output: a `verdict` job that was itself skipped leaves this workflow `success` and proves nothing. The checkout is
   # here and not in the action, which is read from it.
   verdict:
-    needs: [deps, lint]
+    needs: [deps, lint, bash]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -217,4 +241,4 @@ jobs:
         with:
           needs: ${{ toJSON(needs) }}
           plan: ${{ inputs.plan }}
-          jobs: deps lint
+          jobs: deps lint bash

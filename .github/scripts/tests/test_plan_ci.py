@@ -50,7 +50,7 @@ def check(label, got, want):
         print(f"BAD  {label}: got {got!r}, wanted {want!r}")
 
 
-ALL_JOBS = {"ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "web", "docs"}
+ALL_JOBS = {"ci-scripts", "deps", "lint", "bash", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "web", "docs"}
 CELLS = [
     "native-memory main", "native-memory oracle", "native-pg main", "native-pg oracle",
     "worker-memory main", "worker-cf main", "worker-cf oracle", "worker-cf e2e", "worker-cf e2e-mail",
@@ -246,7 +246,7 @@ check("a journey of the mail suite alone runs the same two cells (e2e/support/ i
       run_plan(["e2e/journeys-mail/m2-sign-in-by-code.spec.ts"], REAL_GRAPH), ({"contract"}, {"worker-cf e2e", "worker-cf e2e-mail"}))
 check("a change of the Worker's own crate runs the mail journey's cell with the Worker's other passes",
       "worker-cf e2e-mail" in run_plan(["crates/adapters/cloudflare/src/lib.rs"], REAL_GRAPH)[1], True)
-check("a deploy script runs ci-scripts and no cell", run_plan(["scripts/smoke-deploy.sh"], REAL_GRAPH), ({"ci-scripts"}, set()))
+check("a deploy script runs ci-scripts and the shell lint, and no cell", run_plan(["scripts/smoke-deploy.sh"], REAL_GRAPH), ({"ci-scripts", "bash"}, set()))
 check("preview infrastructure runs shell and Postgres checks", run_plan(["infra/preview/provisioner-bootstrap.sql"], REAL_GRAPH),
       ({"ci-scripts", "pg-adapter"}, set()))
 check("Cloudflare infrastructure runs shell and Postgres checks", run_plan(["infra/cloudflare/preview-access.py"], REAL_GRAPH),
@@ -261,8 +261,8 @@ executor_graph = dict(REAL_GRAPH, **{"thrust-preview-migration-executor": {"thru
 executor_layout = dict(ADR_0009, **{"thrust-preview-migration-executor": "crates/preview-migration-executor"})
 executor_jobs, _ = run_plan(["crates/preview-migration-executor/src/lib.rs"], executor_graph, layout=executor_layout)
 check("migration executor change runs the Worker runtime check", "pg-adapter" in executor_jobs, True)
-check("migration Worker runtime script selects its job", run_plan(["scripts/test-preview-migration-worker.sh"], REAL_GRAPH),
-      ({"pg-adapter"}, set()))
+check("migration Worker runtime script selects its job, and the shell lint", run_plan(["scripts/test-preview-migration-worker.sh"], REAL_GRAPH),
+      ({"pg-adapter", "bash"}, set()))
 check("another workflow runs ci-scripts and deps, no cell", run_plan([".github/workflows/flake-hunt.yml"], REAL_GRAPH),
       ({"ci-scripts", "deps"}, set()))
 check("the book runs only the docs job", run_plan(["docs/src/intro.md"], REAL_GRAPH), ({"docs"}, set()))
@@ -285,6 +285,22 @@ check("the native server's adapter does not", "workers" in run_plan(["crates/ada
 for path in ["scripts/wasm-tests.sh", "scripts/wasm-test-runner.sh", "scripts/lib/workerd-stubs.cjs"]:
     jobs, cells = run_plan([path], REAL_GRAPH)
     check(f"{path} runs the workers job and its test, and no cell", ({"workers", "ci-scripts"} <= jobs, cells), (True, set()))
+# The shell lint (Lint phase, stage 1, the job `bash`): a shell script wherever it is, and shellcheck's configuration, plan it besides what the
+# first matching rule says (ALSO), so a script a rule gives jobs keeps them. A rule of RULES could not do it: it would stop the path at the
+# first match and shadow the rule that knows the script. The stock app's scripts (web/) are not ours, and no other kind of file plans it.
+for path in ["scripts/rs", "scripts/new-thing.sh", "scripts/wasm-tests.sh", "scripts/lib/ports.sh", ".github/scripts/check-shell.sh",
+             ".github/scripts/tests/test-ci-scripts.sh", "infra/preview/scripts/test-reconcile-pr-previews.sh", "tools/oracle-v1/run.sh",
+             "e2e/support/serve.sh", ".agents/plans/p/verify.sh", "a/b/c.sh", ".shellcheckrc",
+             ".github/actions/deploy-worker/action.yml", ".github/actions/verdict/action.yml", ".github/actions/triggerd/action.yml"]:
+    check(f"{path} plans the shell lint", "bash" in run_plan([path], REAL_GRAPH)[0], True)
+for path in ["web/apps/web/x.sh", "web/x.sh", "docs/src/intro.md", "crates/server/src/lib.rs", "deny.toml", "scripts/flagship.py", "e2e/journeys/m1.spec.ts",
+             ".github/actions/README.md", ".github/actions/triggerd/src/index.ts"]:
+    check(f"{path} does not plan the shell lint", "bash" in run_plan([path], REAL_GRAPH)[0], False)
+check("a script a rule gives jobs keeps them, and adds the shell lint", run_plan(["scripts/wasm-tests.sh"], REAL_GRAPH), ({"workers", "ci-scripts", "bash"}, set()))
+check("a script that no job of ci.yml ran plans only the shell lint", run_plan(["scripts/verify-all.sh"], REAL_GRAPH), ({"bash"}, set()))
+check("shellcheck's configuration plans the shell lint and nothing else", run_plan([".shellcheckrc"], REAL_GRAPH), ({"bash"}, set()))
+check("a change to a crate and a script plans the shell lint with the crate's jobs",
+      "bash" in run_plan(["crates/server/src/lib.rs", "scripts/verify-all.sh"], REAL_GRAPH)[0], True)
 # The `linux` job (Phase 3, stage 1) builds the native server and `migrate` in release (build.yml): planned when either crate is affected.
 check("the native server's own change plans linux", "linux" in run_plan(["crates/server/src/lib.rs"], REAL_GRAPH)[0], True)
 check("a crate the server depends on plans linux", "linux" in run_plan(["crates/core/usecases/src/lib.rs"], REAL_GRAPH)[0], True)
@@ -414,7 +430,7 @@ def independent_slices(planned, workflows, jobs):
 JOBS_LIST = list(pc.JOBS)
 # What WORKFLOWS holds today. Each stage of the migration edits this line, so the stage's change to the planner shows in this file,
 # and a mutant that empties the map is killed by it.
-EXPECTED_WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint"),
+EXPECTED_WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint", "bash"),
                       "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux",)}
 check("WORKFLOWS is a partition of the jobs", refused(lambda: pc.check_workflows()), None)
 check("WORKFLOWS holds the workflows moved so far, and their jobs", pc.WORKFLOWS, EXPECTED_WORKFLOWS)
@@ -487,7 +503,9 @@ check("every file that runs the checks is planned as such, whatever the lists sa
 # The two indexes are read by check-ci-index.sh, so a change to one runs that guard (deps) and its test (ci-scripts), which is what the
 # generic rule for .github/ gives; this keeps a README from ever being a file that runs nothing.
 for index in (".github/workflows/README.md", ".github/actions/README.md", ".github/scripts/check-ci-index.sh"):
-    check(f"{index} runs the index guard (deps) and its test (ci-scripts)", run_plan([index], REAL_GRAPH), ({"ci-scripts", "deps"}, set()))
+    # (the guard is itself a shell script, which the shell lint reads too)
+    check(f"{index} runs the index guard (deps) and its test (ci-scripts)", run_plan([index], REAL_GRAPH),
+          ({"ci-scripts", "deps"} | ({"bash"} if index.endswith(".sh") else set()), set()))
 
 # ---- 10. the command line's new lines --------------------------------------------------------------------------------------------
 rc, out, _ = cli(changed="web/x.tsx\n")
@@ -503,12 +521,12 @@ check("cli: a change to e2e/ alone plans the test workflow with the job contract
 check("cli: the cells themselves are still planned, for the test workflow to be given: `cells` and `matrix` name them",
       (json.loads(out.get("cells", "null")), len(json.loads(out.get("matrix", "null"))["include"])), (["worker-cf e2e", "worker-cf e2e-mail"], 2))
 rc, out, _ = cli(changed="scripts/check-web-diff.sh\n")
-check("cli: the Q-R2 gate's script plans the workflow web, and its own test (the job ci-scripts of the workflow test)",
-      (json.loads(out.get("top", "null")), json.loads(out.get("plans", "null"))), (["web", "test"], {"web": ["web"], "test": ["ci-scripts"]}))
+check("cli: the Q-R2 gate's script plans the workflow web, its own test (the job ci-scripts of the workflow test) and the shell lint (the job bash of lint)",
+      (json.loads(out.get("top", "null")), json.loads(out.get("plans", "null"))), (["web", "lint", "test"], {"web": ["web"], "lint": ["bash"], "test": ["ci-scripts"]}))
 rc, out, _ = cli(changed="scripts/smoke-deploy.sh\n")
-check("cli: a deploy script plans the workflow test with the job ci-scripts alone",
+check("cli: a deploy script plans the job ci-scripts of the workflow test, and the job bash of lint",
       (json.loads(out.get("top", "null")), json.loads(out.get("plans", "null")), json.loads(out.get("jobs", "null"))),
-      (["test"], {"test": ["ci-scripts"]}, ["ci-scripts"]))
+      (["lint", "test"], {"lint": ["bash"], "test": ["ci-scripts"]}, ["ci-scripts", "bash"]))
 rc, out, _ = cli(changed=".github/deploy/ca.pem\n")
 check("cli: the deploy's CA root plans the workflow test with hermetic and ci-scripts, in the workflow's order",
       json.loads(out.get("plans", "null")), {"test": ["ci-scripts", "hermetic"]})
@@ -540,11 +558,11 @@ check("cli: clippy.toml plans the lint workflow with the job `lint` alone",
       (json.loads(out.get("top", "null")), json.loads(out.get("plans", "null")), json.loads(out.get("jobs", "null"))),
       (["lint"], {"lint": ["lint"]}, ["lint"]))
 rc, out, _ = cli(changed="scripts/check-layout.sh\n")
-check("cli: a guard of deps plans the lint workflow with the job `deps` alone, and the job `ci-scripts` (its test) of the test workflow",
-      (json.loads(out.get("top", "null")), json.loads(out.get("plans", "null"))), (["lint", "test"], {"lint": ["deps"], "test": ["ci-scripts"]}))
+check("cli: a guard of deps plans the lint workflow with the jobs `deps` and `bash` (it is a shell script), and the job `ci-scripts` (its test) of the test workflow",
+      (json.loads(out.get("top", "null")), json.loads(out.get("plans", "null"))), (["lint", "test"], {"lint": ["deps", "bash"], "test": ["ci-scripts"]}))
 rc, out, _ = cli(changed="clippy.toml\nscripts/check-layout.sh\n")
-check("cli: both together plan the two jobs of lint, in the order of the workflow (deps first)",
-      json.loads(out.get("plans", "null")).get("lint"), ["deps", "lint"])
+check("cli: both together plan the three jobs of lint, in the order of the workflow (deps, lint, bash)",
+      json.loads(out.get("plans", "null")).get("lint"), ["deps", "lint", "bash"])
 rc, out, _ = cli(changed="docs/src/intro.md\ndeny.toml\n")
 check("cli: the book and deny.toml: both workflows, each with its own job",
       (json.loads(out.get("top", "null")), json.loads(out.get("plans", "null"))),
