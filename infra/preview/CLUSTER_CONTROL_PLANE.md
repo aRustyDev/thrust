@@ -26,6 +26,12 @@ ready receipt; PR deletion reverses only the mutable resources and leaves the sh
 the snapshot garbage collector. A changed fingerprint becomes a separate provisioning candidate,
 so the old ready lease stays attached until the caller has verified the candidate receipt.
 
+The lease is serialized only as the bounded `thrust.dev/preview-cluster-lease/v1` document. On
+decode, the controller recomputes its fingerprint, snapshot name, cluster name and idempotency
+key from the artifact/bootstrap digests and PostgreSQL major; it rejects any mismatch or unknown
+field. The document carries no secret and has no quota/profile field. Authentication, controller
+profile selection and receipt persistence remain server-side responsibilities.
+
 ## Controller boundary
 
 GitHub Actions remains without Kubernetes credentials. The Access-protected Cloudflare provisioner
