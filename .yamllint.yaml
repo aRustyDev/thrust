@@ -1,0 +1,9 @@
+# yamllint's configuration for the whole repository (Lint phase, stage 2: .agents/plans/ci-workflows/phases/0005-lint.md).
+# .github/scripts/check-yaml.sh passes this file with -c, so CI, a laptop and the control read the same one.
+#
+# What fails is a defect, not a style: a file that does not parse (yamllint reports that whatever the rules say) and a key written twice in
+# one mapping, which no parser refuses and the last one wins (yq, which the `bash` job already needs, accepts it: measured). Every other rule
+# is off. At yamllint's own `default` the repository has 1,328 findings (1,132 of them line length), and at `relaxed` 1,139; those are
+# the style of files that were never held to one, and the owner chose to fail on defects only.
+rules:
+  key-duplicates: enable
