@@ -298,7 +298,7 @@ runs:
       shell: bash
       env:
         WRANGLER_VERSION: ${{ inputs.wrangler-version }}
-      run: npm install --global "wrangler@${WRANGLER_VERSION}"
+      run: npm install --global wrangler@${WRANGLER_VERSION}
 
     # cloudflared reaches thrust-pg through the Access tunnel (scripts/migrate-ci.sh). It is a release binary of cloudflare/cloudflared,
     # pinned by version AND by its SHA-256 (taken from the release and checked against a download of it on 2026-11-14).
