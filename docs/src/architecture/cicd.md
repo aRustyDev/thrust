@@ -463,7 +463,9 @@ What is not yet verified against the real service: [G-43](../testing/status.md).
   build (the `changes` job, `test_plan_ci.py`) use the runner's own stable (`RUSTUP_TOOLCHAIN=stable`), so they install nothing. `cargo-nextest` is 0.9.140 and `cargo-deny` is 0.20.2, both installed by
   `taiki-e/install-action`. `cloudflared` in the deploy is a release binary pinned by version and by SHA-256, and so is `actionlint` (1.7.12) in the
   `deps` job, because `taiki-e/install-action` does not offer it; the archive's build attestation from `rhysd/actionlint`
-  was verified when the hash was pinned.
+  was verified when the hash was pinned. `shellcheck` (0.11.0, the version `check-shell.sh` holds the scripts to) is installed by
+  `taiki-e/install-action` in the `bash` job and in `deps`, where actionlint runs it over every workflow's `run:` blocks; the runner image's
+  is 0.9.0, which does not know SC2329, and `test_workflow_wiring.py` holds the two installs to the helper's version.
 - `permissions: {}` at the top of each workflow, and `contents: read` and nothing else on each job of `ci.yml` and the
   workflows it calls. `deploy.yml` asks for more, per job: `checks: read` (`plan` reads the commit's checks),
   `id-token: write` and `attestations: write` (`build` only, for the attestation), `attestations: read` and
@@ -484,8 +486,13 @@ What is not yet verified against the real service: [G-43](../testing/status.md).
   input). `actionlint`, run by `lint-actionlint.sh` in the `deps` job, checks every workflow and each call in it: the `with:` it
   passes against the callee's inputs and the outputs it reads through `needs`. It checks nothing outside a git repository, so the
   script refuses to run outside one and, before it lints the repository, shows that it refuses a call that breaks the contract
-  three ways (and accepts a sound one). Its tests use stand-in binaries that each misbehave in one way, so `ci-scripts` needs no
-  `actionlint`. `[verified 2026-11-16 locally, with actionlint 1.7.12]`
+  three ways (and accepts a sound one). It also reads the shell of every `run:` block, by running the shellcheck it is given
+  (`-shellcheck`; with none it skips the blocks and says nothing, so the script refuses to run without one, and `deps` installs the
+  pinned 0.11.0 before it): the control also shows that an unquoted variable (SC2086, so shellcheck is run at all) and a function
+  that is never called, in a block that ends in `exit` (SC2329, which 0.9.0 does not know), are refused, and that a block that
+  quotes and calls what it defines is accepted. actionlint runs shellcheck with `--norc`, so `.shellcheckrc` does not reach a
+  workflow's shell. Its tests use stand-in binaries that each misbehave in one way, so `ci-scripts` needs no `actionlint`.
+  `[verified 2026-11-23 locally, with actionlint 1.7.12 and shellcheck 0.11.0]`
 - `deny.toml` configures the `deny` job (in `security.yml`): advisories, licences, bans (`sqlx`, `sea-orm`, `diesel`, `diesel-async`) and
   sources (crates.io only). Its one advisory ignore is RUSTSEC-2023-0071 (`rsa`), with the reason and when to re-check
   it written beside it; any other advisory is fixed by upgrading. The job fetches the advisory database on every run,
