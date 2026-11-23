@@ -359,6 +359,30 @@ if bash_wf:
     check(f"{bash_path}: {BASH_JOB} runs no other command", len([l for l in bash_code if re.match(r"^\s+run:", l)]), 1)
     check(f"{bash_path}: {BASH_JOB} sets up no Rust toolchain or cache (it reads shell)", [l for l in bash_code if "setup-rust" in l or "cache" in l], [])
 
+# The deps job runs actionlint, and actionlint runs shellcheck over the shell of every workflow's `run:` blocks: the one on PATH, which on the image is 0.9.0 and does not know
+# SC2329. So the workflows' shell was read by an older shellcheck than the scripts' (Lint phase, stage 1, probe C). Four things can be wrong and leave the job green: no install (the
+# image's answers, and only lint-actionlint.sh's control refuses it, at run time), an install at a version that is not the one the scripts are held to, an install AFTER the actionlint
+# step (PATH is read when it runs), and an actionlint run by hand and not through lint-actionlint.sh (which hands it the shellcheck and carries the control). Each is a line, as text.
+DEPS_JOB = "deps"
+deps_wf = next((w for w, jobs in pc.WORKFLOWS.items() if DEPS_JOB in jobs), None)
+check(f"the job {DEPS_JOB} is a job of a called workflow", deps_wf is not None, True)
+if deps_wf and bash_wf:
+    deps_path = f".github/workflows/{deps_wf}.yml"
+    deps_block = block(read_text(deps_path) or "", DEPS_JOB)
+    deps_code = [l for l in deps_block.splitlines() if not l.strip().startswith("#")]
+    deps_installs = re.findall(r"^          tool: shellcheck@(\S+)$", deps_block, re.M)
+    check(f"{deps_path}: {DEPS_JOB} installs shellcheck once, at the version check-shell.sh is held to ({held_to.group(1) if held_to else None})",
+          deps_installs == [held_to.group(1)] if held_to else None, True)
+    check(f"{deps_path}: {DEPS_JOB} installs it with install-action, pinned to a commit, the same one {BASH_JOB} uses",
+          re.findall(r"^      - uses: (taiki-e/install-action@[0-9a-f]{40}) # v\S+\n        with:\n          tool: shellcheck@", deps_block, re.M)
+          == re.findall(r"^      - uses: (taiki-e/install-action@[0-9a-f]{40}) # v\S+\n        with:\n          tool: shellcheck@", bash_block, re.M)
+          and len(re.findall(r"^      - uses: taiki-e/install-action@", deps_block, re.M)) == 1, True)
+    install_at = next((i for i, l in enumerate(deps_code) if "tool: shellcheck@" in l), -1)
+    actionlint_at = next((i for i, l in enumerate(deps_code) if "lint-actionlint.sh" in l), -1)
+    check(f"{deps_path}: {DEPS_JOB} installs shellcheck before the step that runs actionlint", 0 <= install_at < actionlint_at, True)
+    check(f"{deps_path}: {DEPS_JOB} runs actionlint through lint-actionlint.sh, once, and not by hand",
+          (len([l for l in deps_code if "lint-actionlint.sh" in l]), [l for l in deps_code if re.match(r"^\s+\"?(\$RUNNER_TEMP/)?actionlint\"?(\s|$)", l)]), (1, []))
+
 # The wasm job (Phase 3, stage 2) builds the two Workers the deploy bundle ships, in release, with the bundle's own commands, and shares the bundle's cache key so that the next
 # release candidate or tag restores what `main` saved. Six things about it can be wrong and leave the job green: a Worker built by another command than the bundle's (the proof would be of
 # something that does not ship), a Worker built in another directory, a check that looks at one of the Workers or one of the three files only (a build that wrote no wasm would pass), a cache key that
