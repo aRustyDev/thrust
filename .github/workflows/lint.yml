@@ -1,7 +1,7 @@
 name: lint
 
-# The repository's guards, the Rust lint and the shell lint, called by ci.yml (its `lint` job) and runnable alone (ADR-0102). ci.yml passes
-# `plan`, the jobs of this workflow that plan-ci.py says the change needs (`deps`, `lint`, `bash`: any of them); a run by hand plans all. The `verdict` job judges
+# The repository's guards, the Rust lint, the shell lint and the YAML lint, called by ci.yml (its `lint` job) and runnable alone (ADR-0102). ci.yml passes
+# `plan`, the jobs of this workflow that plan-ci.py says the change needs (`deps`, `lint`, `bash`, `yaml`: any of them); a run by hand plans all. The `verdict` job judges
 # the jobs against that plan, so that a planned job that never ran turns ci.yml's `gate` red: a calling job is `success` when only some of
 # its jobs ran.
 
@@ -21,7 +21,7 @@ on:
       plan:
         description: JSON array of the jobs to run
         type: string
-        default: '["deps","lint","bash"]'
+        default: '["deps","lint","bash","yaml"]'
 
 permissions: {}
 
@@ -227,12 +227,39 @@ jobs:
       - name: shellcheck (the control, then every maintained script)
         run: sh .github/scripts/check-shell.sh
 
+  # yamllint over the YAML the repository maintains (Lint phase, stage 2): that it parses, and that no mapping has a key twice, which no parser
+  # refuses (the last wins; yq accepts it, measured) and which actionlint says only of a workflow and of an action a workflow uses, so it is
+  # `dependabot.yml`, the compose files and the oracle's configuration that nothing read. .github/scripts/check-yaml.sh names the files
+  # (every tracked `*.yml` and `*.yaml` less web/, the records of finished experiments and pnpm's lockfile) and, before it reads one, runs a
+  # control: a key written twice and a file that does not parse must be refused, and a file that is only unstyled must pass, which shows that
+  # .yamllint.yaml, and not yamllint's default (1,328 findings of style here), is the configuration in effect. yamllint is not on the image and
+  # install-action has no manifest for it, so it comes as Schemathesis does in contract-pass-tools: a pinned setup-uv and a pinned version, held
+  # equal to the helper's by test_workflow_wiring.py. No Rust toolchain and no cache.
+  yaml:
+    if: contains(fromJSON(inputs.plan), 'yaml')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.12.18"
+          enable-cache: false
+      - name: yamllint (installed at the version the helper is held to)
+        run: uv tool install yamllint==1.38.0
+      - name: yamllint (the control, then every maintained YAML file)
+        run: sh .github/scripts/check-yaml.sh
+
   # ADR-0102: judges this workflow's jobs against the plan, through the action every called workflow uses (it runs assert-gate.sh and
   # sets the output only after that passed). `always()`, so it reports when a job was skipped, failed or cancelled. ci.yml's `gate`
   # requires the output: a `verdict` job that was itself skipped leaves this workflow `success` and proves nothing. The checkout is
   # here and not in the action, which is read from it.
   verdict:
-    needs: [deps, lint, bash]
+    needs: [deps, lint, bash, yaml]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -249,4 +276,4 @@ jobs:
         with:
           needs: ${{ toJSON(needs) }}
           plan: ${{ inputs.plan }}
-          jobs: deps lint bash
+          jobs: deps lint bash yaml

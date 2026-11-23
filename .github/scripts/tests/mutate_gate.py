@@ -69,7 +69,7 @@ CALLS = [
     (DOC, "documentation", ("docs",), "web, documentation, security, build]", "web, security, build]"),
     (SEC, "security", ("deny",), "documentation, security, build]", "documentation, build]"),
     (WEB, "web", ("web",), "lint, web, documentation", "lint, documentation"),
-    (LNT, "lint", ("deps", "lint", "bash"), "test, lint, web", "test, web"),
+    (LNT, "lint", ("deps", "lint", "bash", "yaml"), "test, lint, web", "test, web"),
     (TST, "test", ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "changes, test, lint", "changes, lint"),
     (BLD, "build", ("linux", "wasm"), "security, build]", "security]"),
 ]
@@ -239,12 +239,12 @@ MUTANTS = [
     (GATE, "a level with no cell job is given cells only when PLANNED is unset", '"${PLANNED:-[]}" | jq -c .', '"[]" | jq -c .'),
     # --- the wiring of the called workflows, and what a stage of the migration changes (ADR-0102)
     (PLAN, "the planner forgets the workflows",
-     'WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint", "bash"), '
+     'WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint", "bash", "yaml"), '
      '"test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux", "wasm")}', "WORKFLOWS = {}"),
     (PLAN, "the planner forgets the documentation workflow", '{"documentation": ("docs",), "security"', '{"security"'),
     (PLAN, "the planner forgets the security workflow", ', "security": ("deny",)', ""),
     (PLAN, "the planner forgets the web workflow", ', "web": ("web",)', ""),
-    (PLAN, "the planner forgets the lint workflow", ', "lint": ("deps", "lint", "bash")', ""),
+    (PLAN, "the planner forgets the lint workflow", ', "lint": ("deps", "lint", "bash", "yaml")', ""),
     (PLAN, "the planner forgets the test workflow", ', "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")', ""),
     (PLAN, "the planner forgets the build workflow", ', "build": ("linux", "wasm")', ""),
     (PLAN, "the planner moves linux and wasm to a workflow of another name", '"build": ("linux", "wasm")', '"compile": ("linux", "wasm")'),
@@ -259,10 +259,11 @@ MUTANTS = [
      '("ci-scripts", "hermetic", "pg-adapter", "contract", "workers")'),
     (PLAN, "the planner leaves workers in ci.yml", '("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")',
      '("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants")'),
-    (PLAN, "the planner moves lint's jobs to a workflow of another name", '"lint": ("deps", "lint", "bash")', '"style": ("deps", "lint", "bash")'),
-    (PLAN, "the planner leaves deps in ci.yml", '("deps", "lint", "bash")', '("lint", "bash")'),
-    (PLAN, "the planner leaves lint in ci.yml", '("deps", "lint", "bash")', '("deps", "bash")'),
-    (PLAN, "the planner leaves bash in ci.yml", '("deps", "lint", "bash")', '("deps", "lint")'),
+    (PLAN, "the planner moves lint's jobs to a workflow of another name", '"lint": ("deps", "lint", "bash", "yaml")', '"style": ("deps", "lint", "bash", "yaml")'),
+    (PLAN, "the planner leaves deps in ci.yml", '("deps", "lint", "bash", "yaml")', '("lint", "bash", "yaml")'),
+    (PLAN, "the planner leaves lint in ci.yml", '("deps", "lint", "bash", "yaml")', '("deps", "bash", "yaml")'),
+    (PLAN, "the planner leaves bash in ci.yml", '("deps", "lint", "bash", "yaml")', '("deps", "lint", "yaml")'),
+    (PLAN, "the planner leaves yaml in ci.yml", '("deps", "lint", "bash", "yaml")', '("deps", "lint", "bash")'),
     (PLAN, "the planner moves docs to a workflow of another name", '{"documentation": ("docs",)', '{"docs-book": ("docs",)'),
     (PLAN, "the planner moves deny to a workflow of another name", '"security": ("deny",)', '"supply-chain": ("deny",)'),
     (PLAN, "the planner moves web to a workflow of another name", '"web": ("web",)', '"site": ("web",)'),
@@ -353,7 +354,7 @@ MUTANTS = [
     (PLAN, "the planner does not know the workers job", '"mutants", "workers", "linux", "wasm", "web", "docs")', '"mutants", "linux", "wasm", "web", "docs")'),
     # the bash job (Lint phase, stage 1, the shell lint). The planner adds it to what the first matching rule says (ALSO); the workflow installs
     # shellcheck at the version the helper is held to, and runs the helper, which has the control. Each of these leaves a job that looks healthy
-    (PLAN, "the planner does not know the bash job", '"lint", "bash", "deny"', '"lint", "deny"'),
+    (PLAN, "the planner does not know the bash job", '"lint", "bash", "yaml", "deny"', '"lint", "yaml", "deny"'),
     (PLAN, "a shell script plans no shell lint", '(r"^(?!web/).*\\.sh$", "bash",', '(r"^(?!web/).*\\.shx$", "bash",'),
     (PLAN, "the stock app's scripts plan the shell lint", '(r"^(?!web/).*\\.sh$", "bash",', '(r"^.*\\.sh$", "bash",'),
     (PLAN, "shellcheck's configuration plans no shell lint", '    (r"^\\.shellcheckrc$", "bash", "shellcheck\'s configuration"),\n', ""),
@@ -370,8 +371,26 @@ MUTANTS = [
     (LNT, "bash sets up Rust it does not need",
      "      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29\n        with:\n          tool: shellcheck@0.11.0\n      - name: shellcheck (the control, then every maintained script)\n",
      "      - uses: ./.github/actions/setup-rust\n      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29\n        with:\n          tool: shellcheck@0.11.0\n      - name: shellcheck (the control, then every maintained script)\n"),
-    (LNT, "the verdict does not wait for bash", "    needs: [deps, lint, bash]\n", "    needs: [deps, lint]\n"),
-    (LNT, "the verdict does not judge bash", "          jobs: deps lint bash\n", "          jobs: deps lint\n"),
+    (LNT, "the verdict does not wait for bash", "    needs: [deps, lint, bash, yaml]\n", "    needs: [deps, lint, yaml]\n"),
+    (LNT, "the verdict does not judge bash", "          jobs: deps lint bash yaml\n", "          jobs: deps lint yaml\n"),
+    # the yaml job (Lint phase, stage 2, the YAML lint). The planner adds it by ALSO, as it does bash; the workflow installs yamllint at the version the helper is
+    # held to, with the uv the repository pins, before it runs the helper, which has the control. Each of these leaves a job that looks healthy
+    (PLAN, "the planner does not know the yaml job", '"lint", "bash", "yaml", "deny"', '"lint", "bash", "deny"'),
+    (PLAN, "a YAML file plans no YAML lint", '(r"^(?!web/).*\\.ya?ml$", "yaml",', '(r"^(?!web/).*\\.yamx$", "yaml",'),
+    (PLAN, "the stock app's YAML plans the YAML lint", '(r"^(?!web/).*\\.ya?ml$", "yaml",', '(r"^.*\\.ya?ml$", "yaml",'),
+    (PLAN, "only a .yml plans the YAML lint", '(r"^(?!web/).*\\.ya?ml$", "yaml",', '(r"^(?!web/).*\\.yml$", "yaml",'),
+    (LNT, "yaml installs a yamllint of a version the helper is not held to", "        run: uv tool install yamllint==1.38.0\n", "        run: uv tool install yamllint==1.37.0\n"),
+    (LNT, "yaml does not install yamllint (the helper refuses it, but only on the runner)",
+     "      - name: yamllint (installed at the version the helper is held to)\n        run: uv tool install yamllint==1.38.0\n", ""),
+    (LNT, "yaml installs yamllint after the step that runs the helper",
+     re.compile(r"(      - name: yamllint \(installed[^\n]*\n        run: uv tool install[^\n]*\n)(      - name: yamllint \(the control[^\n]*\n        run: sh \.github/scripts/check-yaml\.sh\n)"), r"\2\1"),
+    (LNT, "yaml runs yamllint by hand, and not the helper that has the control", "        run: sh .github/scripts/check-yaml.sh\n", "        run: yamllint .\n"),
+    (LNT, "yaml uses a uv the repository does not pin", '          version: "0.12.18"\n', '          version: "0.12.17"\n'),
+    (LNT, "yaml sets up Rust it does not need",
+     '      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2\n        with:\n          version: "0.12.18"\n          enable-cache: false\n      - name: yamllint (installed',
+     '      - uses: ./.github/actions/setup-rust\n      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2\n        with:\n          version: "0.12.18"\n          enable-cache: false\n      - name: yamllint (installed'),
+    (LNT, "the verdict does not wait for yaml", "    needs: [deps, lint, bash, yaml]\n", "    needs: [deps, lint, bash]\n"),
+    (LNT, "the verdict does not judge yaml", "          jobs: deps lint bash yaml\n", "          jobs: deps lint bash\n"),
     # the deps job's shellcheck (Lint phase, stage 1 follow-up): actionlint runs the one on PATH over every workflow's run: blocks, so the job installs the pinned one
     # before the actionlint step and runs actionlint through the helper that hands it that shellcheck and has the control
     (LNT, "deps installs a shellcheck of a version the scripts are not held to", "          tool: shellcheck@0.11.0\n      # actionlint checks every workflow",
