@@ -128,7 +128,7 @@ others follow; the one with a measured saving second; the probes, which cost not
 |---|---|---|---|---|---|
 | 1 | linux | `linux` | `migrate` (release) in the bundle; `thrust-server` (debug) in the cells; `thrust-server` (release) only in the `bench` and `scale` passes | **The template**: `build.yml`, its `verdict`, `ci.yml`'s `build` call, `gate`'s `needs`, the planner's `JOBS`, `WORKFLOWS` and path rules, the wiring test and the mutants; what an artifact is; which triples (question 2) | **passes 1 to 7 done** (#352, merged 2026-11-23, and this record; [below](#stage-1-in-detail-linux-the-template)): the job is 134 s cold and 101 to 102 s with the cache (−24%), off every critical path; a break that only the release profile sees turned it, its `verdict` and `gate` red and nothing else (probe B), where every debug-built job stayed green |
 | 2 | wasm | `wasm` | the bundle's two `worker-build` runs (73 s and 17 s, after 106 s to install the tool), the cells' wrangler build, the provisioner's | whether the Workers are built once and shared or twice; **the `deploy-release` cache saved from `main`** (hypothesis above); installing `worker-build` as a prebuilt binary instead of compiling it; whether `wrangler` is needed in a build at all (the web action is not made here: the owner deferred it, see *Action candidates*) | **passes 1 to 7 done** (#356, merged 2026-11-23, and this record; [below](#stage-2-in-detail-wasm)): 238 s cold, 79 s warm (−67%); **the bundle restores the cache**: a release candidate's build 310 s to 165 s, a tag's 328 and 341 s to 176 s |
-| 3 | macos | `macos` | nothing | the probe: does the server build on `aarch64-apple-darwin`, how long, what artifact; whether a cache fits the budget | not started |
+| 3 | macos | `macos` (in `build-extended.yml`: **not a required check**, by the owner's decision of 2026-11-23) | nothing | the probe: does the server build on `aarch64-apple-darwin`, how long, what artifact; whether a cache fits the budget | **in progress in #365** ([below](#stage-3-in-detail-macos)): it builds, first try, in 234 s cold (the server 173 s) |
 | 4 | windows | `windows` | nothing | the probe: does `ring` build on `x86_64-pc-windows-msvc`; the shell the steps run in (bash is on the runner) | not started |
 | 5 | docker | `docker` | nothing: no Dockerfile | question 3; an image built from a Dockerfile of the repository's, **not pushed** | not started |
 | 6 | bsd | `bsd` | nothing | question 2; a VM on a hosted runner or a cross toolchain: a survey of public solutions comes first; the stage is dropped if neither is worth its time | not started |
@@ -259,6 +259,64 @@ What it shows:
 | 6 Parallelization | measured on the same runs | **No change.** `wasm` is on no critical path (a full run took 711 s, set by the e2e cell at 664 s; the job is 238 s cold, 79 s warm), and the two Workers' builds share one `target/` and cost 43.8 s and 2.9 s warm: a second job for the edge Worker would pay the checkout and the setup (about 18 s) to save 2.9 s |
 | 7 CPU minimization | runner-seconds | **No change.** A planned `wasm` costs 79 runner-seconds warm, about 1.5% of a full run's median (5,240 s, research 0020), and it is planned by crate, as the other jobs are (the Worker depends on `thrust-core`, so most Rust changes plan it). The one waste in it is `wrangler`: `setup-rust`'s input `worker-tools` installs it with `worker-build`, it takes 7.8 s warm (10% of the job; 8.6 s in the bundle's build, 5%), and no command of the job or of the bundle's build calls it. Splitting the input would save about 8 s a planned run and 8 s of a release's wait, and touches the action every Rust job shares (so every pull request runs everything) and the attested bundle build: not worth it at 0.15% of a full run, and recorded here. The same build is made three times at pull-request time when a change reaches the Worker (the ten `worker-cf` cells, this job and, at a release, the bundle); building it once and giving the cells its artifact would remove about ten builds of 74 s cold, which was the owner's call in the Test phase and is still not proposed |
 
+### Stage 3 in detail: `macos`
+
+**Purpose and use cases.** `macos` proves that the native server and the migration binary still build in **release** for `aarch64-apple-darwin`, on a hosted macOS runner, and keeps what it built for three days. It is the only thing in CI that runs on macOS: the tests and the contract suite are run on a Mac by hand, so a break that only that target sees (a crate that needs an API Linux has and macOS has not, a C dependency that Apple's compiler refuses) would otherwise be found at a desk. It runs every night, when a release candidate is pushed, by hand, and on a pull request that edits its workflow or its action. **It is not a required check.**
+
+**What the owner asked, and how I read it.** On 2026-11-23, with the job already green in the gate: "I'd prefer if macos build jobs weren't required checks. These are useful, but I see them as lower priority checks that should run during either a pre-release check or nightly." In this repository the only required check is `gate`, and a job is "required" when `gate` waits for it. So I read it as **outside `gate` altogether**: a red macOS run blocks no pull request and no release candidate (the staging deploy waits for `ci`'s `gate` and for nothing else). A called workflow cannot hold such a job (every job of a callee is in the plan, the `verdict` and so the gate: the Test phase's stage 8 found that, and ADR-0102 says it), so `macos` is in a workflow of its own, `build-extended.yml`, **as `deep.yml` and `flake-hunt.yml` are**, with no plan and no `verdict`. Its triggers are the two the owner named: **every night** (06:11 UTC, on `main`; that run also saves the cache and keeps it from the seven days an unread cache lives) and **when a release candidate is pushed** (`rc/*`, the branch release-plz makes: the pre-release check), and by hand.
+The other reading was to keep `macos` in `build.yml` and plan it only in full runs (a release candidate's pull request, a merge-queue entry, the nightly `ci`). That is one planner rule, but `gate` would then require it of a release candidate, which is a required check at the moment that matters most. I did not build it; if it is the one the owner meant, it is a small change. **Not yet said by the owner: whether the Windows and BSD stages are treated the same.** They would be the next jobs of `build-extended.yml`; I have not assumed it.
+
+**Acceptance.**
+1. It fails when either release build fails, when either binary is missing, and **when the runner is not the target the job claims**, each shown by a control.
+2. It is not in the gate: not called by `ci.yml`, no job of the planner, no plan, no `verdict`; shown by the wiring test and the mutants.
+3. It runs on its triggers: the pull-request path trigger on the pull request that adds it; the night, the release-candidate push and the dispatch after the merge.
+4. A pull request that does not edit its workflow or its action does not start it.
+5. It is documented: `cicd.md` (a row), `running.md` (rows, a runbook that says a red night blocks nothing and so must be read), the workflows and actions indexes.
+
+**Steps.** The steps are the action `build-native`'s, which `linux` uses too: they would have been an exact copy of `linux`'s but for the runner, the cache key and the artifact's name, so they became an action when the second job needed them (and `linux`'s own steps moved onto it, with its cache key and artifact name unchanged). A job gives the action a `name` (it keys the cache, `build-<name>`, and names the artifact) and a `target`: the action checks that the compiler's host is that target; builds `thrust-server` and `migrate` in release (`migrate` with the command `build-bundle` uses); checks that both exist; and uploads them for three days.
+
+**What it costs** (run `45114294824` of #365, when the job was still in `build.yml`; `macos-15-arm64`, **cold**) [re-run: the job's log]:
+
+| Step | Seconds | Note |
+|---|---|---|
+| queue | 3 | no wait for a runner |
+| checkout | 4.4 | |
+| `setup-rust`: the toolchain, the cache restore | 8.6 | "No cache found." |
+| the host check | 0.1 | "building for aarch64-apple-darwin" |
+| `cargo build --release --locked -p thrust-server` | **173.0** | cargo: "Finished `release` profile in 2m 52s"; `linux` took 86.5 s |
+| `cargo build --release … --bin migrate` | 37.4 | `linux`: 21.7 s |
+| the check, the upload | 2.7 | 4,910,254 bytes zipped |
+| **the job** | **234** | |
+
+What it shows:
+- **It builds, first try.** The server's whole tree, `ring` (the one crate with C and assembly in it) included, compiles and links for `aarch64-apple-darwin` on a hosted runner. The two binaries are `Mach-O 64-bit executable arm64`, 8,962,816 and 2,298,896 bytes [re-run: `file` on the downloaded artifact, inspected and not run]. `setup-rust` and the scripts it runs (written and tested on Ubuntu) worked on macOS with BSD tools unchanged.
+- **It is twice as slow as `linux`**: three M1 cores against four vCPUs. In the full run of #365 (51 jobs, 626 s, the e2e cell 590 s) it was not among the seven longest jobs, so the owner's decision is about priority and not about time.
+- **`linux` did not change by moving onto the action**: 113 s cold in the same run, against 134 s in #352's, which is runner variance (about 1.5 times, research 0017) and not a result; the one new step costs 0.1 s.
+
+**Survey of public solutions.**
+
+| Candidate | Read from | Fit | Decision |
+|---|---|---|---|
+| `macos-15` (arm64) | GitHub's runner reference and the runner-images repository (search results) | standard hosted runner, 3 M1 cores, 7 GB; **free and unlimited in a public repository**; macOS 14 images were retired on 2026-11-02 | **chosen**, pinned as `ubuntu-24.04` is |
+| `macos-latest` | the same | a label that moves with the image | rejected: a proof of a target must not change what it runs on by itself (the host check would catch an architecture change, not a compiler's) |
+| `macos-26` (arm64), `macos-15-intel` and `macos-26-intel` | the same | the next macOS, and Intel (4 CPUs, 14 GB) for `x86_64-apple-darwin` | not used: the owner named `aarch64-apple-darwin` only (question 2); added if the owner names them |
+| Cross-compiling for macOS from Linux (`cargo-zigbuild`, `osxcross`) | not read | would prove a build with a cross linker, not on the target's own compiler | rejected: the point is the real target's toolchain, and the runner is free |
+| `houseabsolute/actions-rust-cross` | its README (stage 1) | for Windows and macOS targets it does not use `cross` ("those hosts can build all supported targets natively") | not needed: `cargo build` on the target's own host |
+
+**Custom code, and why it has no built-in.** The host check: `host="$(rustc -vV | sed -n 's/^host: //p')"` against the job's `target`. Nothing asks "is this runner the target the job says": `runs-on` is a label, and `cargo build` on the wrong runner succeeds and produces binaries of that runner's own host. Its control is the step's own text, taken from the action: it passes for this Mac's own host and fails, naming both, for another target, an empty one and the host with a character more or less (6 of 6, `scratchpad/native-action-control.py`); the binary check has its 4 cases in the same script.
+
+**Failure modes.** A compile or link error on macOS only (the stage's reason to exist); a runner on another host (the check); a build that exits 0 and makes no binary (the check); a macOS image that is retired (the label stops resolving: a red night); a cache entry that evicts another in a repository at its limit (pass 5); **a red night that nobody reads**, which is what "not required" costs.
+
+**Pass log (so far).**
+
+| Pass | Where | Evidence |
+|---|---|---|
+| 1 PoC | #365's run `45114294824` | `macos` green on a real input: 234 s cold, both binaries `Mach-O arm64`; the host check and the binary check's controls (10 of 10) |
+| 2 Prototype | #365 | **after the owner's decision**, the job is in `build-extended.yml`: its pull-request path trigger runs it on the pull request that adds it; the night, the release-candidate push and the dispatch cannot run before the merge (GitHub reads a schedule and dispatches only from the default branch) |
+| 3 Documented | #365 | `cicd.md`, `running.md` (rows and a runbook), the workflows and actions indexes, the header comment of `build-extended.yml` |
+| 4 "MVP" | #365 | "in the gate" does not apply: **by the owner's decision it is not**, and the wiring test and the mutants hold that. What does apply: the wiring checks (the workflow is not called, has no plan and no verdict, has the four triggers and no more, and its job is pinned to a runner and a target), the mutants, the workflow lint and `actionlint`, the shell guard over the action, and `ci-commands.py` against `main` (`PARITY`: `macos` and the action appear, `linux`'s five steps are the action's, the verdict is unchanged) |
+| 5 to 7 | after the merge | not yet measured: the warm time, the cache's size in a repository at its limit and whether it pays, and the first night |
+
 ## Action candidates
 
 **Exact duplicates:** none that Build makes an action of. The web app's build (`setup-node` from `web/.node-version`, pnpm at the pinned version, `pnpm install --frozen-lockfile --ignore-scripts`, `turbo run build --filter=web`, the `index.html` check) is in `web.yml`, `build-bundle` and `contract-pass-tools`, and **the owner has already decided it is not an exact duplicate and deferred the action**: the record of #258 (2026-11-17, [phase 0002](0002-migration.md)) says the copies are "the same commands, but not an exact copy" (four steps with job-level `env` against one step with step-level `env`, and `contract-pass-tools` runs two more commands after), and that "the action is proposed again in the Web and E2E phases, where pass 5 (caching the pnpm store) touches exactly these steps". This document said, when it was written, that Build would create it without asking; **that was wrong, and is corrected here (2026-11-23): Build does not touch it.** `build-bundle` is the third place, and it is unchanged.
@@ -276,6 +334,7 @@ asked at stage 2. The native steps of `linux`, `macos` and `windows` are the sam
 | 2. Which targets? | **One per stage first**: `x86_64-unknown-linux-gnu` (and `-musl` for the image), `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`, `x86_64-unknown-freebsd`. Other arches and other BSDs only if the owner names them |
 | 3. A Dockerfile? | **Yes, at stage 5**, for `thrust-server` and `migrate`; the design (base image, user, where it lives) is put to the owner then; the image is built and not pushed |
 | 4. The deploy bundle | **Stays** built and attested by `deploy.yml` and `release.yml` through `build-bundle`. Moving it is Phase 4's, with its verifier |
+| Added at stage 3 (2026-11-23): are the macOS build jobs required checks? | **No.** The owner: "I'd prefer if macos build jobs weren't required checks. These are useful, but I see them as lower priority checks that should run during either a pre-release check or nightly." Read as: **outside `gate` altogether** (a red run blocks no pull request and no release candidate), in a workflow of their own, `build-extended.yml`, **nightly and when a release candidate is pushed**. The other reading (planned only in full runs, so required of a release candidate's `gate` and of nothing else) is one planner rule away, and the owner has not said whether the Windows and BSD stages are to be treated the same: asked in the stage 3 pull request |
 
 The questions as asked:
 

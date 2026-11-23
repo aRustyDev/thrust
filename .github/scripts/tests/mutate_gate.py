@@ -37,6 +37,8 @@ PLAN, GATE = "plan-ci.py", "assert-gate.sh"
 CI, DOC, SEC, WEB, LNT, TST, BLD = "ci.yml", "documentation.yml", "security.yml", "web.yml", "lint.yml", "test.yml", "build.yml"  # ci.yml, and each called workflow
 ACT = "verdict/action.yml"  # the action every called workflow's `verdict` job calls
 DEEP = "deep.yml"  # not a called workflow: the nightly run of the randomized tests, which nothing waits for
+NAT = "build-native/action.yml"  # the steps the native jobs share (linux in build.yml, macos in build-extended.yml)
+BEXT = "build-extended.yml"  # not a called workflow: nightly and before a release, never in the gate
 TOOLS = "contract-pass-tools/action.yml"  # what a pass needs on the runner; the e2e cells are the longest job of every full run
 SHELL = shutil.which("dash") or "sh"
 TIMEOUT = 900
@@ -54,9 +56,11 @@ TARGET_PATH = {
     ACT: ".github/actions/verdict/action.yml",
     DEEP: ".github/workflows/deep.yml",
     TOOLS: ".github/actions/contract-pass-tools/action.yml",
+    NAT: ".github/actions/build-native/action.yml",
+    BEXT: ".github/workflows/build-extended.yml",
 }
 # The workflows that tests judge as files: a mutant of one of these must fail test_workflow_wiring.py.
-WIRED = (CI, DOC, SEC, WEB, LNT, TST, BLD, ACT, DEEP, TOOLS)
+WIRED = (CI, DOC, SEC, WEB, LNT, TST, BLD, ACT, DEEP, TOOLS, NAT, BEXT)
 
 # The called workflows, each with its file, its jobs (in the order the file has them), and the text of ci.yml's `gate` needs that names its
 # call and what that becomes without it. A stage of the migration adds a row, and every mutant below that is written for "a called
@@ -371,18 +375,43 @@ MUTANTS = [
     (PLAN, "linux is not planned when only the crate of migrate changed", 'BUILD_CRATES = ("thrust-server", "thrust-adapters-postgres")', 'BUILD_CRATES = ("thrust-server",)'),
     (PLAN, "linux is not planned when only the server changed", 'BUILD_CRATES = ("thrust-server", "thrust-adapters-postgres")', 'BUILD_CRATES = ("thrust-adapters-postgres",)'),
     (PLAN, "the planner does not know the linux job", '"workers", "linux", "wasm", "web", "docs")', '"workers", "wasm", "web", "docs")'),
-    (BLD, "linux builds the server in debug", "        run: scripts/rs cargo build --release --locked -p thrust-server\n", "        run: scripts/rs cargo build --locked -p thrust-server\n"),
-    (BLD, "linux builds the server without the lockfile", "        run: scripts/rs cargo build --release --locked -p thrust-server\n", "        run: scripts/rs cargo build --release -p thrust-server\n"),
-    (BLD, "linux builds migrate with another command than the deploy bundle", " -p thrust-adapters-postgres --features native --bin migrate\n", " -p thrust-adapters-postgres --bin migrate\n"),
-    (BLD, "linux builds migrate in debug", "cargo build --release --locked -p thrust-adapters-postgres", "cargo build --locked -p thrust-adapters-postgres"),
-    (BLD, "linux checks for one binary only", "          for bin in thrust-server migrate; do\n", "          for bin in thrust-server; do\n"),
-    (BLD, "linux does not fail when a binary is missing", '"target/release/$bin" || { echo "::error::cargo built nothing at target/release/$bin"; exit 1; }', '"target/release/$bin" || true'),
-    (BLD, "linux shares a cache key with the hermetic job", "          cache-key: build-linux\n", "          cache-key: native-hermetic\n"),
-    (BLD, "linux saves its cache on every ref", "          cache-key: build-linux\n          save-cache: ${{ github.ref == 'refs/heads/main' }}\n", "          cache-key: build-linux\n          save-cache: 'true'\n"),
-    (BLD, "linux uploads nothing and passes", "            target/release/migrate\n          if-no-files-found: error\n", "            target/release/migrate\n          if-no-files-found: ignore\n"),
-    (BLD, "linux keeps its binaries for ninety days", "            target/release/migrate\n          if-no-files-found: error\n          retention-days: 3\n",
-     "            target/release/migrate\n          if-no-files-found: error\n          retention-days: 90\n"),
-    (BLD, "linux uploads under another name", "          name: build-linux-x86_64-unknown-linux-gnu\n", "          name: build-linux\n"),
+    # the action build-native (Phase 3, stages 1 and 3): the steps of the native jobs. Each of these leaves a job that still looks healthy
+    (NAT, "native builds the server in debug", "      run: scripts/rs cargo build --release --locked -p thrust-server\n", "      run: scripts/rs cargo build --locked -p thrust-server\n"),
+    (NAT, "native builds the server without the lockfile", "      run: scripts/rs cargo build --release --locked -p thrust-server\n", "      run: scripts/rs cargo build --release -p thrust-server\n"),
+    (NAT, "native builds migrate with another command than the deploy bundle", " -p thrust-adapters-postgres --features native --bin migrate\n", " -p thrust-adapters-postgres --bin migrate\n"),
+    (NAT, "native builds migrate in debug", "cargo build --release --locked -p thrust-adapters-postgres", "cargo build --locked -p thrust-adapters-postgres"),
+    (NAT, "native checks for one binary only", "        for bin in thrust-server migrate; do\n", "        for bin in thrust-server; do\n"),
+    (NAT, "native does not fail when a binary is missing", '"target/release/$bin" || { echo "::error::cargo built nothing at target/release/$bin"; exit 1; }', '"target/release/$bin" || true'),
+    (NAT, "native compares the host with itself, which always agrees", 'test "$host" = "$TARGET" || {', 'test "$host" = "$host" || {'),
+    (NAT, "native is not told its target by the job", "        TARGET: ${{ inputs.target }}\n", "        TARGET: x86_64-unknown-linux-gnu\n"),
+    (NAT, "native checks the host after it has built", re.compile(r'(    # The control against a proof of the wrong target:.*?        echo "building for \$host"\n\n)(    - name: Build thrust-server \(release\)\n      shell: bash\n      run: scripts/rs cargo build --release --locked -p thrust-server\n\n)', re.S), r"\2\1"),
+    (NAT, "native shares one cache key between its jobs", "        cache-key: build-${{ inputs.name }}\n", "        cache-key: build-native\n"),
+    (NAT, "native saves its cache on every ref", "        save-cache: ${{ github.ref == 'refs/heads/main' }}\n", "        save-cache: 'true'\n"),
+    (NAT, "native uploads nothing and passes", "        if-no-files-found: error\n", "        if-no-files-found: ignore\n"),
+    (NAT, "native keeps its binaries for ninety days", "        retention-days: 3\n", "        retention-days: 90\n"),
+    (NAT, "native uploads under a name that is not its job's", "        name: build-${{ inputs.name }}-${{ inputs.target }}\n", "        name: build-${{ inputs.target }}\n"),
+    (NAT, "native uploads one binary only", "          target/release/thrust-server\n          target/release/migrate\n", "          target/release/thrust-server\n"),
+    (NAT, "native hands a secret to the upload", "    - name: Upload the binaries\n", "    - name: Upload the binaries\n      env:\n        TOKEN: ${{ secrets.GITHUB_TOKEN }}\n"),
+    (BLD, "linux runs on an image that moves", "    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n        with:\n          persist-credentials: false\n      # The steps are the action's",
+     "    runs-on: ubuntu-latest\n    timeout-minutes: 30\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n        with:\n          persist-credentials: false\n      # The steps are the action's"),
+    (BLD, "linux claims the macOS target", "          target: x86_64-unknown-linux-gnu\n", "          target: aarch64-apple-darwin\n"),
+    (BLD, "linux has a step of its own", "          name: linux\n          target: x86_64-unknown-linux-gnu\n", "          name: linux\n          target: x86_64-unknown-linux-gnu\n      - run: echo hi\n"),
+    # build-extended.yml (stage 3; the owner's decision of 2026-11-23): the macOS build is not a required check, and runs nightly and before a release
+    (BEXT, "macos runs on the Linux runner", "    runs-on: macos-15\n", "    runs-on: ubuntu-24.04\n"),
+    (BEXT, "macos runs on an image that moves", "    runs-on: macos-15\n", "    runs-on: macos-latest\n"),
+    (BEXT, "macos names itself linux", "          name: macos\n", "          name: linux\n"),
+    (BEXT, "macos claims the Linux target", "          target: aarch64-apple-darwin\n", "          target: x86_64-unknown-linux-gnu\n"),
+    (BEXT, "macos has a step of its own", "          name: macos\n          target: aarch64-apple-darwin\n", "          name: macos\n          target: aarch64-apple-darwin\n      - run: echo hi\n"),
+    (BEXT, "macos may ask for an id-token", "    runs-on: macos-15\n    timeout-minutes: 30\n    permissions:\n      contents: read\n", "    runs-on: macos-15\n    timeout-minutes: 30\n    permissions:\n      contents: read\n      id-token: write\n"),
+    (BEXT, "build-extended is a called workflow", "on:\n  workflow_dispatch:\n", "on:\n  workflow_call:\n  workflow_dispatch:\n"),
+    (BEXT, "build-extended never runs by itself", '  schedule:\n    - cron: "11 6 * * *"\n', ""),
+    (BEXT, "build-extended does not run when a release candidate is pushed", "  push:\n    branches:\n      - rc/*\n", ""),
+    (BEXT, "build-extended is started by every pull request", "  pull_request:\n    paths:\n      - .github/workflows/build-extended.yml\n      - .github/actions/build-native/**\n", "  pull_request:\n"),
+    (BEXT, "build-extended is not started by an edit of the action it uses", "      - .github/actions/build-native/**\n", ""),
+    (BEXT, "build-extended makes its job wait for another", "  macos:\n    runs-on: macos-15\n", "  macos:\n    needs: [other]\n    runs-on: macos-15\n"),
+    (BEXT, "build-extended grants more at the top", "\npermissions: {}\n", "\npermissions:\n  contents: write\n"),
+    (BEXT, "build-extended lets two runs of one ref go on at once", "  group: build-extended-${{ github.ref }}\n", "  group: build-extended\n"),
+    (BEXT, "build-extended lets a push not replace the run in flight", "  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}\n", "  cancel-in-progress: false\n"),
     (BLD, "linux may ask for an id-token", "    if: contains(fromJSON(inputs.plan), 'linux')\n    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n    permissions:\n      contents: read\n",
      "    if: contains(fromJSON(inputs.plan), 'linux')\n    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n    permissions:\n      contents: read\n      id-token: write\n"),
     # the wasm job (Phase 3, stage 2): the bundle's two Workers, built with the bundle's commands, under the bundle's cache key. Each of these leaves a job that still looks healthy
@@ -426,6 +455,8 @@ EQUIVALENT = [
     (ACT, "(equivalent) a comment is added to the verdict action", "runs:\n  using: composite\n", "runs:\n  # a comment\n  using: composite\n"),
     (DEEP, "(equivalent) a comment is added to deep.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
     (TOOLS, "(equivalent) a comment is added to contract-pass-tools", "runs:\n  using: composite\n", "runs:\n  # a comment\n  using: composite\n"),
+    (NAT, "(equivalent) a comment is added to build-native", "runs:\n  using: composite\n", "runs:\n  # a comment\n  using: composite\n"),
+    (BEXT, "(equivalent) a comment is added to build-extended.yml", "permissions: {}\n\n# A newer push", "permissions: {}\n\n# a comment\n# A newer push"),
 ]
 
 
