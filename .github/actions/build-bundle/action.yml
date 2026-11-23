@@ -8,6 +8,7 @@ description: >-
 
 # The caller checks the commit out first (persist-credentials: false). `sha` is written into the bundle as BUILD_SHA, which
 # unpack-bundle.sh later holds to the commit being deployed.
+# PROBE (not to be merged): a comment only, so that release.yml and deploy.yml build the bundle in their dry runs and show whether it restores the cache the `wasm` job saved.
 
 inputs:
   sha:
