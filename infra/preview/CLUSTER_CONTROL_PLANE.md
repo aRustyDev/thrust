@@ -59,6 +59,11 @@ namespace-scoped Kubernetes service account. It must:
 5. Ask the Cloudflare resource controller to create a VPC TCP service pinned to that one `-rw`
    hostname and port 5432, then create a unique Hyperdrive configuration with caching disabled.
    A VPC service is an exact host/port boundary, not a tunnel-wide network grant.
+   `infra/cloudflare/hyperdrive.sh ensure-preview-cluster` is the bounded Hyperdrive operation:
+   it accepts only the canonical cluster name, a supplied opaque dedicated VPC-service ID and
+   `pr_<n>` matching that name. Its matching `verify-preview-cluster` operation returns only the
+   verified Hyperdrive/VPC IDs, never the origin password. The resource controller must not use
+   the legacy `ensure` command or `thrust-pg-dev` for this path.
 6. Return a non-secret receipt only after the cluster, VPC service, and Hyperdrive origin all
    match the lease. The deployment path verifies the receipt before binding the Preview.
 
