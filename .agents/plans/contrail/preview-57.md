@@ -72,6 +72,9 @@ Actions and the Cloudflare Worker stay without Kubernetes credentials.
    for interrupted updates. Do not use a tunnel-wide VPC network binding. Upgrade the existing
    VPC service TLS configuration to private-CA `verify_full` before trusting new routes; the
    current development services record an unauthenticated encrypted hop.
+   The Cloudflare root now accepts an additive, protected `preview_vpc_services` map and validates
+   every Preview service name and exact `-rw` hostname; the controller/reconciler still needs to
+   materialize the active lease set into that input and consume the resulting service IDs.
 3. Define and implement a trusted migration execution and credential contract. Migrate the
    exact PR revision as `pr_<n>` through a bounded, authenticated path; never expose the
    provisioner, deployment or cluster database credentials to PR-controlled code. Demonstrate

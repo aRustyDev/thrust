@@ -61,6 +61,41 @@ run "verify_ca_and_verify_full_stay_selectable" {
   }
 }
 
+run "a_preview_service_is_added_without_replacing_standard_services" {
+  command = plan
+
+  variables {
+    preview_vpc_services = {
+      "thrust-preview-pr-42-43cba3a2caeb" = {
+        hostname = "thrust-preview-pr-42-43cba3a2caeb-rw.thrust-preview.svc.cluster.local"
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      length(cloudflare_connectivity_directory_service.postgres) == 3 &&
+      cloudflare_connectivity_directory_service.postgres["thrust-preview-pr-42-43cba3a2caeb"].host.hostname == "thrust-preview-pr-42-43cba3a2caeb-rw.thrust-preview.svc.cluster.local" &&
+      cloudflare_connectivity_directory_service.postgres["thrust-pg"].host.hostname == "thrust-pg-rw.thrust.svc.cluster.local"
+    )
+    error_message = "A Preview service must be additive and pin exactly its own read-write CNPG hostname."
+  }
+}
+
+run "rejects_a_preview_service_with_a_noncanonical_name_or_hostname" {
+  command = plan
+
+  variables {
+    preview_vpc_services = {
+      "thrust-preview-pr-42-not-hex" = {
+        hostname = "thrust-pg-dev-rw.thrust.svc.cluster.local"
+      }
+    }
+  }
+
+  expect_failures = [var.preview_vpc_services]
+}
+
 run "rejects_a_replica_service_host" {
   command = plan
 

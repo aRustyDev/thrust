@@ -47,6 +47,13 @@ set its `TF_VAR_<variable_name>` value in the protected environment rather than 
 uses the existing state key and has separate plan and apply dispatches; an `apply` dispatch creates and applies a
 fresh plan in its protected run. Review a current plan dispatch before approving or starting an apply.
 
+The preview-cluster controller will supply its current lease set as protected
+`TF_VAR_preview_vpc_services` JSON. This is a separate map, merged with the two durable services,
+so a Preview update cannot replace `thrust-pg` or `thrust-pg-dev`. Each key must be the deterministic
+`thrust-preview-pr-<number>-<fingerprint-prefix>` cluster name and its host must be exactly that
+cluster's `-rw` service in `TF_VAR_preview_namespace` (default `thrust-preview`). Terraform rejects
+a replica, another Preview's hostname, or a noncanonical name before the Cloudflare API is called.
+
 The `preview-control-plane` environment holds the independent runtime credentials: variable
 `CLOUDFLARE_ACCOUNT_ID` and `THRUST_PREVIEW_PROVISIONER_URL`, and secrets `HYPERDRIVE_API_TOKEN`,
 `PREVIEW_PROVISIONER_ACCESS_CLIENT_ID`, and `PREVIEW_PROVISIONER_ACCESS_CLIENT_SECRET`. The scheduled
