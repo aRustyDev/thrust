@@ -307,34 +307,57 @@ if workers_wf:
     check(f"{workers_path}: {WORKERS_JOB} has a cache key of its own, which no other job uses",
           ("          cache-key: wasm-workers\n" in workers_block, (read_text(workers_path) or "").count("cache-key: wasm-workers\n")), (True, 1))
 
-# The linux job (Phase 3, stage 1) is a compile proof: the native server and `migrate`, built in release, and uploaded. Five things about it can be wrong and leave the job green:
-# a build that is not the release profile (the debug build of the cells already exists, and a release-only break would pass), an unlocked build (it would read a lockfile
-# it is free to change), a `migrate` built by another command than the deploy bundle's (the proof would say nothing about the binary that ships), a check for the binaries
-# that looks for one only (a build that made no `migrate` would pass), and a cache key shared with another job (a release profile saved under it evicts that job's
-# entries). Each is a line, checked as text, and the mutant driver changes each.
-LINUX_JOB = "linux"
-linux_wf = next((w for w, jobs in pc.WORKFLOWS.items() if LINUX_JOB in jobs), None)
-check(f"the job {LINUX_JOB} is a job of a called workflow", linux_wf is not None, True)
-if linux_wf:
-    linux_path = f".github/workflows/{linux_wf}.yml"
-    linux_text = read_text(linux_path) or ""
-    linux_block = block(linux_text, LINUX_JOB)
-    check(f"{linux_path}: {LINUX_JOB} builds the server in release, locked",
-          "        run: scripts/rs cargo build --release --locked -p thrust-server\n" in linux_block, True)
-    migrate_cmd = "run: scripts/rs cargo build --release --locked -p thrust-adapters-postgres --features native --bin migrate\n"
-    check(f"{linux_path}: {LINUX_JOB} builds migrate with the command the deploy bundle builds it with",
-          (migrate_cmd in linux_block, migrate_cmd in (read_text(".github/actions/build-bundle/action.yml") or "")), (True, True))
-    check(f"{linux_path}: {LINUX_JOB} builds nothing but in release (no cargo build line without --release)",
-          [l for l in linux_block.splitlines() if re.search(r"run: .*cargo build", l) and "--release" not in l], [])
-    check(f"{linux_path}: {LINUX_JOB} checks for each of the two binaries it built, and fails when one is missing",
-          '          for bin in thrust-server migrate; do\n            test -x "target/release/$bin" || ' in linux_block and "exit 1; }\n" in linux_block, True)
-    all_text = "".join(read_text(f".github/workflows/{f}") or "" for f in sorted(os.listdir(os.path.join(ROOT, ".github", "workflows"))) if f.endswith(".yml"))
-    check(f"{linux_path}: {LINUX_JOB} has a cache key of its own, saved on main only, which no other job uses",
-          ("          cache-key: build-linux\n          save-cache: ${{ github.ref == 'refs/heads/main' }}\n" in linux_block, all_text.count("cache-key: build-linux\n")), (True, 1))
-    check(f"{linux_path}: {LINUX_JOB} uploads the binaries, fails when there are none, and keeps them three days",
-          "          name: build-linux-x86_64-unknown-linux-gnu\n" in linux_block and "          if-no-files-found: error\n          retention-days: 3\n" in linux_block, True)
-    check(f"{linux_path}: {LINUX_JOB} has no secret, no environment and no id-token: a compile proof publishes and attests nothing",
-          [l for l in linux_text.splitlines() if re.search(r"secrets\.|environment:|id-token|attestations|contents: write", l) and not l.strip().startswith("#")], [])
+# The native jobs of build.yml (Phase 3: `linux`, stage 1, and `macos`, stage 3) are compile proofs of the native server and `migrate`, built in release and uploaded. Their steps are one
+# action's, `build-native`; what is each job's is the runner, a name (which keys its cache and names its artifact) and the target it is a proof for. Things about them that can be wrong and
+# leave a job green: a build that is not the release profile (the debug build of the cells already exists, and a release-only break would pass), an unlocked build (it would read a
+# lockfile it is free to change), a `migrate` built by another command than the deploy bundle's (the proof would say nothing about the binary that ships), a check for the binaries that
+# looks for one only (a build that made no `migrate` would pass), a proof that does not check what it builds for (a job named macos that landed on a Linux runner would upload Linux
+# binaries under its name), a cache key shared with another job (a release profile saved under it evicts that job's entries), and a job on the wrong runner. Each is a line, checked as
+# text, and the mutant driver changes each.
+NATIVE = {"linux": ("ubuntu-24.04", "x86_64-unknown-linux-gnu"), "macos": ("macos-15", "aarch64-apple-darwin")}  # job: (its runner, its target)
+native_action_path = ".github/actions/build-native/action.yml"
+native_action = read_text(native_action_path) or ""
+check(f"{native_action_path} exists", native_action != "", True)
+check(f"the planner's native jobs are the ones checked here ({', '.join(NATIVE)})", sorted(pc.NATIVE_JOBS), sorted(NATIVE))
+migrate_cmd = "run: scripts/rs cargo build --release --locked -p thrust-adapters-postgres --features native --bin migrate\n"
+check(f"{native_action_path}: it builds the server in release, locked", "      run: scripts/rs cargo build --release --locked -p thrust-server\n" in native_action, True)
+check(f"{native_action_path}: it builds migrate with the command the deploy bundle builds it with",
+      (migrate_cmd in native_action, migrate_cmd in (read_text(".github/actions/build-bundle/action.yml") or "")), (True, True))
+check(f"{native_action_path}: it builds nothing but in release (no cargo build line without --release)",
+      [l for l in native_action.splitlines() if re.search(r"run: .*cargo build", l) and "--release" not in l], [])
+check(f"{native_action_path}: it checks for each of the two binaries it built, and fails when one is missing",
+      '        for bin in thrust-server migrate; do\n          test -x "target/release/$bin" || { echo "::error::cargo built nothing at target/release/$bin"; exit 1; }\n        done\n' in native_action, True)
+check(f"{native_action_path}: it checks that the runner's Rust host is the target the job claims, before it builds anything",
+      "      env:\n        TARGET: ${{ inputs.target }}\n      run: |\n        set -eu\n        host=\"$(rustc -vV | sed -n 's/^host: //p')\"\n        test \"$host\" = \"$TARGET\" || { echo \""
+      in native_action and 0 < native_action.find("The runner builds for the target") < native_action.find("Build thrust-server (release)"), True)
+check(f"{native_action_path}: its cache key is derived from the job's name, saved on main only",
+      "        cache-key: build-${{ inputs.name }}\n        save-cache: ${{ github.ref == 'refs/heads/main' }}\n" in native_action, True)
+check(f"{native_action_path}: it uploads the binaries under the job's name and target, fails when there are none, and keeps them three days",
+      "        name: build-${{ inputs.name }}-${{ inputs.target }}\n        path: |\n          target/release/thrust-server\n          target/release/migrate\n"
+      "        if-no-files-found: error\n        retention-days: 3\n" in native_action, True)
+check(f"{native_action_path}: it has no secret, no environment and no id-token: a compile proof publishes and attests nothing",
+      [l for l in native_action.splitlines() if re.search(r"secrets\.|environment:|id-token|attestations|contents: write", l) and not l.strip().startswith("#")], [])
+all_text = "".join(read_text(f".github/workflows/{f}") or "" for f in sorted(os.listdir(os.path.join(ROOT, ".github", "workflows"))) if f.endswith(".yml"))
+all_text += "".join(read_text(f".github/actions/{d}/action.yml") or "" for d in sorted(os.listdir(os.path.join(ROOT, ".github", "actions"))) if os.path.isdir(os.path.join(ROOT, ".github", "actions", d)))
+check("the only cache key that begins with build- is the native action's, derived from a job's name (two jobs share a cache only if they share a name)",
+      re.findall(r"cache-key: (build-[^\n]+)", all_text), ["build-${{ inputs.name }}"])
+check("no two native jobs share a target (the artifact of each is named after its name and target)", sorted(t for _, t in NATIVE.values()), sorted({t for _, t in NATIVE.values()}))
+for job, (runner, target) in NATIVE.items():
+    job_wf = next((w for w, jobs in pc.WORKFLOWS.items() if job in jobs), None)
+    check(f"the job {job} is a job of a called workflow", job_wf is not None, True)
+    if not job_wf:
+        continue
+    job_path = f".github/workflows/{job_wf}.yml"
+    job_text = read_text(job_path) or ""
+    job_block = block(job_text, job)
+    check(f"{job_path}: {job} runs on {runner}, a pinned image", f"    runs-on: {runner}\n" in job_block, True)
+    check(f"{job_path}: {job} calls build-native with its own name and target ({job}, {target}), after the checkout",
+          f"      - uses: ./.github/actions/build-native\n        with:\n          name: {job}\n          target: {target}\n" in job_block
+          and 0 < job_block.find("uses: actions/checkout@") < job_block.find("uses: ./.github/actions/build-native"), True)
+    check(f"{job_path}: {job} has no step of its own that runs a command (the steps are the action's)",
+          [l for l in job_block.splitlines() if re.match(r"^\s+(- )?run:", l)], [])
+    check(f"{job_path}: {job} has no secret, no environment and no id-token: a compile proof publishes and attests nothing",
+          [l for l in job_block.splitlines() if re.search(r"secrets\.|environment:|id-token|attestations|contents: write", l) and not l.strip().startswith("#")], [])
 
 # The bash job (Lint phase, stage 1) runs shellcheck over the scripts the repository maintains, through .github/scripts/check-shell.sh. Four things about
 # it can be wrong and leave the job looking healthy until the runner differs from a laptop: a shellcheck installed at a version the helper is not held to (the

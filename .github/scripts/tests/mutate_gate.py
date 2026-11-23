@@ -37,6 +37,7 @@ PLAN, GATE = "plan-ci.py", "assert-gate.sh"
 CI, DOC, SEC, WEB, LNT, TST, BLD = "ci.yml", "documentation.yml", "security.yml", "web.yml", "lint.yml", "test.yml", "build.yml"  # ci.yml, and each called workflow
 ACT = "verdict/action.yml"  # the action every called workflow's `verdict` job calls
 DEEP = "deep.yml"  # not a called workflow: the nightly run of the randomized tests, which nothing waits for
+NAT = "build-native/action.yml"  # the steps the native jobs of build.yml share (linux, macos)
 TOOLS = "contract-pass-tools/action.yml"  # what a pass needs on the runner; the e2e cells are the longest job of every full run
 SHELL = shutil.which("dash") or "sh"
 TIMEOUT = 900
@@ -54,9 +55,10 @@ TARGET_PATH = {
     ACT: ".github/actions/verdict/action.yml",
     DEEP: ".github/workflows/deep.yml",
     TOOLS: ".github/actions/contract-pass-tools/action.yml",
+    NAT: ".github/actions/build-native/action.yml",
 }
 # The workflows that tests judge as files: a mutant of one of these must fail test_workflow_wiring.py.
-WIRED = (CI, DOC, SEC, WEB, LNT, TST, BLD, ACT, DEEP, TOOLS)
+WIRED = (CI, DOC, SEC, WEB, LNT, TST, BLD, ACT, DEEP, TOOLS, NAT)
 
 # The called workflows, each with its file, its jobs (in the order the file has them), and the text of ci.yml's `gate` needs that names its
 # call and what that becomes without it. A stage of the migration adds a row, and every mutant below that is written for "a called
@@ -67,7 +69,7 @@ CALLS = [
     (WEB, "web", ("web",), "lint, web, documentation", "lint, documentation"),
     (LNT, "lint", ("deps", "lint", "bash"), "test, lint, web", "test, web"),
     (TST, "test", ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "changes, test, lint", "changes, lint"),
-    (BLD, "build", ("linux", "wasm"), "security, build]", "security]"),
+    (BLD, "build", ("linux", "wasm", "macos"), "security, build]", "security]"),
 ]
 CELL_JOB = "contract"  # the job that runs the contract cells; the workflow that holds it gets the mutants of the cells (call_mutants)
 
@@ -236,16 +238,17 @@ MUTANTS = [
     # --- the wiring of the called workflows, and what a stage of the migration changes (ADR-0102)
     (PLAN, "the planner forgets the workflows",
      'WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint", "bash"), '
-     '"test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux", "wasm")}', "WORKFLOWS = {}"),
+     '"test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux", "wasm", "macos")}', "WORKFLOWS = {}"),
     (PLAN, "the planner forgets the documentation workflow", '{"documentation": ("docs",), "security"', '{"security"'),
     (PLAN, "the planner forgets the security workflow", ', "security": ("deny",)', ""),
     (PLAN, "the planner forgets the web workflow", ', "web": ("web",)', ""),
     (PLAN, "the planner forgets the lint workflow", ', "lint": ("deps", "lint", "bash")', ""),
     (PLAN, "the planner forgets the test workflow", ', "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")', ""),
-    (PLAN, "the planner forgets the build workflow", ', "build": ("linux", "wasm")', ""),
-    (PLAN, "the planner moves linux and wasm to a workflow of another name", '"build": ("linux", "wasm")', '"compile": ("linux", "wasm")'),
-    (PLAN, "the planner leaves wasm in ci.yml", '"build": ("linux", "wasm")', '"build": ("linux",)'),
-    (PLAN, "the planner leaves linux in ci.yml", '"build": ("linux", "wasm")', '"build": ("wasm",)'),
+    (PLAN, "the planner forgets the build workflow", ', "build": ("linux", "wasm", "macos")', ""),
+    (PLAN, "the planner moves linux, wasm and macos to a workflow of another name", '"build": ("linux", "wasm", "macos")', '"compile": ("linux", "wasm", "macos")'),
+    (PLAN, "the planner leaves wasm in ci.yml", '"build": ("linux", "wasm", "macos")', '"build": ("linux", "macos")'),
+    (PLAN, "the planner leaves macos in ci.yml", '"build": ("linux", "wasm", "macos")', '"build": ("linux", "wasm")'),
+    (PLAN, "the planner leaves linux in ci.yml", '"build": ("linux", "wasm", "macos")', '"build": ("wasm", "macos")'),
     (PLAN, "the planner moves test's jobs to a workflow of another name", '"test": ("ci-scripts"', '"suite": ("ci-scripts"'),
     (PLAN, "the planner leaves ci-scripts in ci.yml", '("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")',
      '("hermetic", "pg-adapter", "contract", "mutants", "workers")'),
@@ -346,7 +349,7 @@ MUTANTS = [
     (PLAN, "workers is planned when the native server changes", "    if WORKER in hit:\n", "    if WORKER in hit or MUTANTS_BINARY in hit:\n"),
     (PLAN, "a change to the wasm32 tests' scripts plans no workers", '{"jobs": ["workers", "ci-scripts"]}', '{"jobs": ["ci-scripts"]}'),
     (PLAN, "a change to the wasm32 tests' scripts plans no ci-scripts", '{"jobs": ["workers", "ci-scripts"]}', '{"jobs": ["workers"]}'),
-    (PLAN, "the planner does not know the workers job", '"mutants", "workers", "linux", "wasm", "web", "docs")', '"mutants", "linux", "wasm", "web", "docs")'),
+    (PLAN, "the planner does not know the workers job", '"mutants", "workers", "linux", "wasm", "macos", "web", "docs")', '"mutants", "linux", "wasm", "macos", "web", "docs")'),
     # the bash job (Lint phase, stage 1, the shell lint). The planner adds it to what the first matching rule says (ALSO); the workflow installs
     # shellcheck at the version the helper is held to, and runs the helper, which has the control. Each of these leaves a job that looks healthy
     (PLAN, "the planner does not know the bash job", '"lint", "bash", "deny"', '"lint", "deny"'),
@@ -365,24 +368,41 @@ MUTANTS = [
     (LNT, "the verdict does not wait for bash", "    needs: [deps, lint, bash]\n", "    needs: [deps, lint]\n"),
     (LNT, "the verdict does not judge bash", "          jobs: deps lint bash\n", "          jobs: deps lint\n"),
     # the linux job (Phase 3, stage 1): the native server and `migrate`, built in release, as a compile proof. Each of these leaves a job that still looks healthy
-    (PLAN, "linux is not planned when the native server changes", '    if any(crate in hit for crate in BUILD_CRATES):\n        jobs.add("linux")\n', ""),
+    (PLAN, "linux and macos are not planned when the native server changes", '    if any(crate in hit for crate in BUILD_CRATES):\n        jobs.update(NATIVE_JOBS)\n', ""),
+    (PLAN, "macos is not planned when the native server changes", '        jobs.update(NATIVE_JOBS)\n', '        jobs.add("linux")\n'),
+    (PLAN, "linux is not planned when the native server changes", '        jobs.update(NATIVE_JOBS)\n', '        jobs.add("macos")\n'),
+    (PLAN, "the native jobs forget macos", 'NATIVE_JOBS = ("linux", "macos")', 'NATIVE_JOBS = ("linux",)'),
+    (PLAN, "the native jobs forget linux", 'NATIVE_JOBS = ("linux", "macos")', 'NATIVE_JOBS = ("macos",)'),
     (PLAN, "linux is planned for every crate change", "    if any(crate in hit for crate in BUILD_CRATES):\n", "    if changed:\n"),
     (PLAN, "linux is planned only when the server's own crate changed", "    if any(crate in hit for crate in BUILD_CRATES):\n", "    if any(crate in changed for crate in BUILD_CRATES):\n"),
     (PLAN, "linux is not planned when only the crate of migrate changed", 'BUILD_CRATES = ("thrust-server", "thrust-adapters-postgres")', 'BUILD_CRATES = ("thrust-server",)'),
     (PLAN, "linux is not planned when only the server changed", 'BUILD_CRATES = ("thrust-server", "thrust-adapters-postgres")', 'BUILD_CRATES = ("thrust-adapters-postgres",)'),
-    (PLAN, "the planner does not know the linux job", '"workers", "linux", "wasm", "web", "docs")', '"workers", "wasm", "web", "docs")'),
-    (BLD, "linux builds the server in debug", "        run: scripts/rs cargo build --release --locked -p thrust-server\n", "        run: scripts/rs cargo build --locked -p thrust-server\n"),
-    (BLD, "linux builds the server without the lockfile", "        run: scripts/rs cargo build --release --locked -p thrust-server\n", "        run: scripts/rs cargo build --release -p thrust-server\n"),
-    (BLD, "linux builds migrate with another command than the deploy bundle", " -p thrust-adapters-postgres --features native --bin migrate\n", " -p thrust-adapters-postgres --bin migrate\n"),
-    (BLD, "linux builds migrate in debug", "cargo build --release --locked -p thrust-adapters-postgres", "cargo build --locked -p thrust-adapters-postgres"),
-    (BLD, "linux checks for one binary only", "          for bin in thrust-server migrate; do\n", "          for bin in thrust-server; do\n"),
-    (BLD, "linux does not fail when a binary is missing", '"target/release/$bin" || { echo "::error::cargo built nothing at target/release/$bin"; exit 1; }', '"target/release/$bin" || true'),
-    (BLD, "linux shares a cache key with the hermetic job", "          cache-key: build-linux\n", "          cache-key: native-hermetic\n"),
-    (BLD, "linux saves its cache on every ref", "          cache-key: build-linux\n          save-cache: ${{ github.ref == 'refs/heads/main' }}\n", "          cache-key: build-linux\n          save-cache: 'true'\n"),
-    (BLD, "linux uploads nothing and passes", "            target/release/migrate\n          if-no-files-found: error\n", "            target/release/migrate\n          if-no-files-found: ignore\n"),
-    (BLD, "linux keeps its binaries for ninety days", "            target/release/migrate\n          if-no-files-found: error\n          retention-days: 3\n",
-     "            target/release/migrate\n          if-no-files-found: error\n          retention-days: 90\n"),
-    (BLD, "linux uploads under another name", "          name: build-linux-x86_64-unknown-linux-gnu\n", "          name: build-linux\n"),
+    (PLAN, "the planner does not know the linux job", '"workers", "linux", "wasm", "macos", "web", "docs")', '"workers", "wasm", "macos", "web", "docs")'),
+    # the action build-native (Phase 3, stages 1 and 3): the steps of the native jobs. Each of these leaves a job that still looks healthy
+    (NAT, "native builds the server in debug", "      run: scripts/rs cargo build --release --locked -p thrust-server\n", "      run: scripts/rs cargo build --locked -p thrust-server\n"),
+    (NAT, "native builds the server without the lockfile", "      run: scripts/rs cargo build --release --locked -p thrust-server\n", "      run: scripts/rs cargo build --release -p thrust-server\n"),
+    (NAT, "native builds migrate with another command than the deploy bundle", " -p thrust-adapters-postgres --features native --bin migrate\n", " -p thrust-adapters-postgres --bin migrate\n"),
+    (NAT, "native builds migrate in debug", "cargo build --release --locked -p thrust-adapters-postgres", "cargo build --locked -p thrust-adapters-postgres"),
+    (NAT, "native checks for one binary only", "        for bin in thrust-server migrate; do\n", "        for bin in thrust-server; do\n"),
+    (NAT, "native does not fail when a binary is missing", '"target/release/$bin" || { echo "::error::cargo built nothing at target/release/$bin"; exit 1; }', '"target/release/$bin" || true'),
+    (NAT, "native compares the host with itself, which always agrees", 'test "$host" = "$TARGET" || {', 'test "$host" = "$host" || {'),
+    (NAT, "native is not told its target by the job", "        TARGET: ${{ inputs.target }}\n", "        TARGET: x86_64-unknown-linux-gnu\n"),
+    (NAT, "native checks the host after it has built", re.compile(r'(    # The control against a proof of the wrong target:.*?        echo "building for \$host"\n\n)(    - name: Build thrust-server \(release\)\n      shell: bash\n      run: scripts/rs cargo build --release --locked -p thrust-server\n\n)', re.S), r"\2\1"),
+    (NAT, "native shares one cache key between its jobs", "        cache-key: build-${{ inputs.name }}\n", "        cache-key: build-native\n"),
+    (NAT, "native saves its cache on every ref", "        save-cache: ${{ github.ref == 'refs/heads/main' }}\n", "        save-cache: 'true'\n"),
+    (NAT, "native uploads nothing and passes", "        if-no-files-found: error\n", "        if-no-files-found: ignore\n"),
+    (NAT, "native keeps its binaries for ninety days", "        retention-days: 3\n", "        retention-days: 90\n"),
+    (NAT, "native uploads under a name that is not its job's", "        name: build-${{ inputs.name }}-${{ inputs.target }}\n", "        name: build-${{ inputs.target }}\n"),
+    (NAT, "native uploads one binary only", "          target/release/thrust-server\n          target/release/migrate\n", "          target/release/thrust-server\n"),
+    (NAT, "native hands a secret to the upload", "    - name: Upload the binaries\n", "    - name: Upload the binaries\n      env:\n        TOKEN: ${{ secrets.GITHUB_TOKEN }}\n"),
+    (BLD, "macos runs on the Linux runner", "    runs-on: macos-15\n", "    runs-on: ubuntu-24.04\n"),
+    (BLD, "macos runs on an image that moves", "    runs-on: macos-15\n", "    runs-on: macos-latest\n"),
+    (BLD, "macos names itself linux", "          name: macos\n", "          name: linux\n"),
+    (BLD, "macos claims the Linux target", "          target: aarch64-apple-darwin\n", "          target: x86_64-unknown-linux-gnu\n"),
+    (BLD, "linux claims the macOS target", "          target: x86_64-unknown-linux-gnu\n", "          target: aarch64-apple-darwin\n"),
+    (BLD, "macos has a step of its own", "          name: macos\n          target: aarch64-apple-darwin\n", "          name: macos\n          target: aarch64-apple-darwin\n      - run: echo hi\n"),
+    (BLD, "macos may ask for an id-token", "    if: contains(fromJSON(inputs.plan), 'macos')\n    runs-on: macos-15\n    timeout-minutes: 30\n    permissions:\n      contents: read\n",
+     "    if: contains(fromJSON(inputs.plan), 'macos')\n    runs-on: macos-15\n    timeout-minutes: 30\n    permissions:\n      contents: read\n      id-token: write\n"),
     (BLD, "linux may ask for an id-token", "    if: contains(fromJSON(inputs.plan), 'linux')\n    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n    permissions:\n      contents: read\n",
      "    if: contains(fromJSON(inputs.plan), 'linux')\n    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n    permissions:\n      contents: read\n      id-token: write\n"),
     # the wasm job (Phase 3, stage 2): the bundle's two Workers, built with the bundle's commands, under the bundle's cache key. Each of these leaves a job that still looks healthy
@@ -391,7 +411,8 @@ MUTANTS = [
     (PLAN, "wasm is planned only when the Worker's own crate changed", "    if any(crate in hit for crate in WASM_CRATES):\n", "    if any(crate in changed for crate in WASM_CRATES):\n"),
     (PLAN, "wasm is not planned when only the edge Worker changed", 'WASM_CRATES = ("thrust-worker", "thrust-edge")', 'WASM_CRATES = ("thrust-worker",)'),
     (PLAN, "wasm is not planned when only the Worker changed", 'WASM_CRATES = ("thrust-worker", "thrust-edge")', 'WASM_CRATES = ("thrust-edge",)'),
-    (PLAN, "the planner does not know the wasm job", '"linux", "wasm", "web", "docs")', '"linux", "web", "docs")'),
+    (PLAN, "the planner does not know the wasm job", '"linux", "wasm", "macos", "web", "docs")', '"linux", "macos", "web", "docs")'),
+    (PLAN, "the planner does not know the macos job", '"wasm", "macos", "web", "docs")', '"wasm", "web", "docs")'),
     (BLD, "wasm builds the Worker in debug", "        run: ../../scripts/rs worker-build --release . --no-default-features\n", "        run: ../../scripts/rs worker-build . --no-default-features\n"),
     (BLD, "wasm builds the Worker with its default features", "        run: ../../scripts/rs worker-build --release . --no-default-features\n", "        run: ../../scripts/rs worker-build --release .\n"),
     (BLD, "wasm builds the Worker in the edge's directory", "        working-directory: crates/worker\n", "        working-directory: crates/edge\n"),
@@ -426,6 +447,7 @@ EQUIVALENT = [
     (ACT, "(equivalent) a comment is added to the verdict action", "runs:\n  using: composite\n", "runs:\n  # a comment\n  using: composite\n"),
     (DEEP, "(equivalent) a comment is added to deep.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
     (TOOLS, "(equivalent) a comment is added to contract-pass-tools", "runs:\n  using: composite\n", "runs:\n  # a comment\n  using: composite\n"),
+    (NAT, "(equivalent) a comment is added to build-native", "runs:\n  using: composite\n", "runs:\n  # a comment\n  using: composite\n"),
 ]
 
 

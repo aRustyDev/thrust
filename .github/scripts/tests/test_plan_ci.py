@@ -50,7 +50,7 @@ def check(label, got, want):
         print(f"BAD  {label}: got {got!r}, wanted {want!r}")
 
 
-ALL_JOBS = {"ci-scripts", "deps", "lint", "bash", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "wasm", "web", "docs"}
+ALL_JOBS = {"ci-scripts", "deps", "lint", "bash", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "wasm", "macos", "web", "docs"}
 CELLS = [
     "native-memory main", "native-memory oracle", "native-pg main", "native-pg oracle",
     "worker-memory main", "worker-cf main", "worker-cf oracle", "worker-cf e2e", "worker-cf e2e-mail",
@@ -147,7 +147,7 @@ def want_for_crates(changed, deps):
     if WORKER in hit:
         jobs.add("workers")
     if SERVER in hit or POSTGRES in hit:
-        jobs.add("linux")
+        jobs.update({"linux", "macos"})
     if WORKER in hit or EDGE in hit:
         jobs.add("wasm")
     cells = {c for c in CELLS if BINARY[c.split(" ")[0]] in hit or SUITE in changed}
@@ -316,6 +316,19 @@ migrate_layout = dict(ADR_0009, **{POSTGRES: "crates/adapters/postgres"})
 check("the crate of migrate plans linux where the server does not depend on it",
       "linux" in run_plan(["crates/adapters/postgres/src/lib.rs"], migrate_graph, layout=migrate_layout)[0], True)
 check("the server's own change still plans it there", "linux" in run_plan(["crates/server/src/lib.rs"], migrate_graph, layout=migrate_layout)[0], True)
+# The `macos` job (Phase 3, stage 3) builds the same two binaries on a macOS runner, so it is planned exactly when `linux` is: one rule, two targets.
+for path, graph, layout, label in [("crates/server/src/lib.rs", REAL_GRAPH, None, "the native server's own change"),
+                                   ("crates/core/usecases/src/lib.rs", REAL_GRAPH, None, "a crate the server depends on"),
+                                   ("crates/adapters/cloudflare/src/lib.rs", REAL_GRAPH, None, "a Worker-only crate"),
+                                   ("crates/worker/src/lib.rs", REAL_GRAPH, None, "the Worker itself"),
+                                   ("crates/editor/doc/src/lib.rs", REAL_GRAPH, None, "a crate no binary depends on"),
+                                   ("crates/adapters/postgres/src/lib.rs", migrate_graph, migrate_layout, "the crate of migrate where the server does not depend on it")]:
+    planned = run_plan([path], graph, layout=layout)[0]
+    check(f"{label}: macos is planned exactly when linux is", ("macos" in planned, "linux" in planned), ("linux" in planned,) * 2)
+check("the native server's own change plans macos", "macos" in run_plan(["crates/server/src/lib.rs"], REAL_GRAPH)[0], True)
+check("a Worker-only crate does not plan macos", "macos" in run_plan(["crates/adapters/cloudflare/src/lib.rs"], REAL_GRAPH)[0], False)
+check("the crate of migrate plans macos where the server does not depend on it",
+      "macos" in run_plan(["crates/adapters/postgres/src/lib.rs"], migrate_graph, layout=migrate_layout)[0], True)
 # The `wasm` job (Phase 3, stage 2) builds the Worker and the edge Worker in release (build.yml): planned when either crate is affected.
 check("the Worker's own change plans wasm", "wasm" in run_plan(["crates/worker/src/lib.rs"], REAL_GRAPH)[0], True)
 check("a crate the Worker depends on plans wasm", "wasm" in run_plan(["crates/adapters/cloudflare/src/lib.rs"], REAL_GRAPH)[0], True)
@@ -448,7 +461,7 @@ JOBS_LIST = list(pc.JOBS)
 # What WORKFLOWS holds today. Each stage of the migration edits this line, so the stage's change to the planner shows in this file,
 # and a mutant that empties the map is killed by it.
 EXPECTED_WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint", "bash"),
-                      "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux", "wasm")}
+                      "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux", "wasm", "macos")}
 check("WORKFLOWS is a partition of the jobs", refused(lambda: pc.check_workflows()), None)
 check("WORKFLOWS holds the workflows moved so far, and their jobs", pc.WORKFLOWS, EXPECTED_WORKFLOWS)
 
@@ -568,7 +581,7 @@ rc, out, _ = cli(changed="crates/server/Cargo.toml\n")
 check("cli: the native server's Cargo.toml plans the security workflow too, the lint workflow with both its jobs, the test workflow and the build workflow, after the jobs still in ci.yml",
       (json.loads(out.get("top", "null"))[-4:], json.loads(out.get("plans", "null")).get("security"),
        json.loads(out.get("plans", "null")).get("lint"), json.loads(out.get("plans", "null")).get("build")),
-      (["security", "lint", "test", "build"], ["deny"], ["deps", "lint"], ["linux"]))
+      (["security", "lint", "test", "build"], ["deny"], ["deps", "lint"], ["linux", "macos"]))
 # a workflow of two jobs can have a partial plan: only the job the change needs, and `verdict` expects the other to be skipped
 rc, out, _ = cli(changed="clippy.toml\n")
 check("cli: clippy.toml plans the lint workflow with the job `lint` alone",
