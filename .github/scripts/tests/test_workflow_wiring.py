@@ -314,11 +314,11 @@ if workers_wf:
 # looks for one only (a build that made no `migrate` would pass), a proof that does not check what it builds for (a job named macos that landed on a Linux runner would upload Linux
 # binaries under its name), a cache key shared with another job (a release profile saved under it evicts that job's entries), and a job on the wrong runner. Each is a line, checked as
 # text, and the mutant driver changes each.
-NATIVE = {"linux": ("ubuntu-24.04", "x86_64-unknown-linux-gnu"), "macos": ("macos-15", "aarch64-apple-darwin")}  # job: (its runner, its target)
+# job: (its workflow, its runner, its target). `linux` is a required check (build.yml, called by ci.yml); `macos` is not (build-extended.yml, never called, never in the gate).
+NATIVE = {"linux": ("build", "ubuntu-24.04", "x86_64-unknown-linux-gnu"), "macos": ("build-extended", "macos-15", "aarch64-apple-darwin")}
 native_action_path = ".github/actions/build-native/action.yml"
 native_action = read_text(native_action_path) or ""
 check(f"{native_action_path} exists", native_action != "", True)
-check(f"the planner's native jobs are the ones checked here ({', '.join(NATIVE)})", sorted(pc.NATIVE_JOBS), sorted(NATIVE))
 migrate_cmd = "run: scripts/rs cargo build --release --locked -p thrust-adapters-postgres --features native --bin migrate\n"
 check(f"{native_action_path}: it builds the server in release, locked", "      run: scripts/rs cargo build --release --locked -p thrust-server\n" in native_action, True)
 check(f"{native_action_path}: it builds migrate with the command the deploy bundle builds it with",
@@ -341,14 +341,13 @@ all_text = "".join(read_text(f".github/workflows/{f}") or "" for f in sorted(os.
 all_text += "".join(read_text(f".github/actions/{d}/action.yml") or "" for d in sorted(os.listdir(os.path.join(ROOT, ".github", "actions"))) if os.path.isdir(os.path.join(ROOT, ".github", "actions", d)))
 check("the only cache key that begins with build- is the native action's, derived from a job's name (two jobs share a cache only if they share a name)",
       re.findall(r"cache-key: (build-[^\n]+)", all_text), ["build-${{ inputs.name }}"])
-check("no two native jobs share a target (the artifact of each is named after its name and target)", sorted(t for _, t in NATIVE.values()), sorted({t for _, t in NATIVE.values()}))
-for job, (runner, target) in NATIVE.items():
-    job_wf = next((w for w, jobs in pc.WORKFLOWS.items() if job in jobs), None)
-    check(f"the job {job} is a job of a called workflow", job_wf is not None, True)
-    if not job_wf:
-        continue
+check("no two native jobs share a target (the artifact of each is named after its name and target)", sorted(t for _, _, t in NATIVE.values()), sorted({t for _, _, t in NATIVE.values()}))
+check("the native job that is a required check, linux, is a job of a called workflow, and macos is the job of none (it is not in the gate)",
+      ([w for w, jobs in pc.WORKFLOWS.items() if "linux" in jobs], [w for w, jobs in pc.WORKFLOWS.items() if "macos" in jobs], "macos" in pc.JOBS), (["build"], [], False))
+for job, (job_wf, runner, target) in NATIVE.items():
     job_path = f".github/workflows/{job_wf}.yml"
     job_text = read_text(job_path) or ""
+    check(f"{job_path} exists", job_text != "", True)
     job_block = block(job_text, job)
     check(f"{job_path}: {job} runs on {runner}, a pinned image", f"    runs-on: {runner}\n" in job_block, True)
     check(f"{job_path}: {job} calls build-native with its own name and target ({job}, {target}), after the checkout",
@@ -358,6 +357,30 @@ for job, (runner, target) in NATIVE.items():
           [l for l in job_block.splitlines() if re.match(r"^\s+(- )?run:", l)], [])
     check(f"{job_path}: {job} has no secret, no environment and no id-token: a compile proof publishes and attests nothing",
           [l for l in job_block.splitlines() if re.search(r"secrets\.|environment:|id-token|attestations|contents: write", l) and not l.strip().startswith("#")], [])
+
+# build-extended.yml (Phase 3, stage 3; the owner's decision of 2026-11-23: the macOS build is not a required check, and runs nightly and before a release). Like deep.yml it is not a
+# called workflow: ci.yml has no job for it and `gate` does not read it, so a red run blocks nothing. Each of these can go wrong and leave a workflow that still "works": being called by
+# ci.yml (a red macOS build would block pull requests), being started by every pull request (each would pay a macOS build, and `build-extended` would be a check on it), losing its night or
+# its release-candidate trigger (it would run less often than asked), a job with a plan or a verdict (it would be waiting for a gate that does not wait for it), and the workflow's
+# permissions. Each is a line, checked as text, and the mutant driver changes each.
+EXT_PATH = ".github/workflows/build-extended.yml"
+ext_text = read_text(EXT_PATH)
+check(f"{EXT_PATH} is there", ext_text is not None, True)
+if ext_text is not None:
+    ext_code = [l for l in ext_text.splitlines() if not l.strip().startswith("#")]
+    check(f"{EXT_PATH} is not a called workflow: no `workflow_call`, no job of ci.yml calls it, and it has no `plan` input",
+          ("workflow_call" in ext_text, f"workflows/{os.path.basename(EXT_PATH)}" in ci_text, "inputs.plan" in ext_text), (False, False, False))
+    check(f"{EXT_PATH} has no verdict job, and no job needs another (nothing in it is waited for)",
+          ("verdict:" in ext_text, [l for l in ext_code if re.match(r"^\s+needs:", l)]), (False, []))
+    check(f"{EXT_PATH} runs every night", '  schedule:\n    - cron: "11 6 * * *"\n' in ext_text, True)
+    check(f"{EXT_PATH} runs when a release candidate is pushed, and by hand", "  push:\n    branches:\n      - rc/*\n" in ext_text and "  workflow_dispatch:\n" in ext_text, True)
+    check(f"{EXT_PATH} is started by a pull request only if it edits this file or the action it uses, so no other pull request pays for it",
+          "  pull_request:\n    paths:\n      - .github/workflows/build-extended.yml\n      - .github/actions/build-native/**\n\npermissions: {}\n" in ext_text, True)
+    check(f"{EXT_PATH} grants nothing at the top, and its jobs read the repository only", "\npermissions: {}\n" in ext_text and
+          all("    permissions:\n      contents: read\n" in block(ext_text, j) for j in job_ids(ext_text)), True)
+    check(f"{EXT_PATH} has one run in flight per ref, and a push or a pull request replaces the one before it",
+          "concurrency:\n  group: build-extended-${{ github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}\n" in ext_text, True)
+    check(f"{EXT_PATH} has the job macos and no other (the targets that follow are added to it on purpose)", job_ids(ext_text), ["macos"])
 
 # The bash job (Lint phase, stage 1) runs shellcheck over the scripts the repository maintains, through .github/scripts/check-shell.sh. Four things about
 # it can be wrong and leave the job looking healthy until the runner differs from a laptop: a shellcheck installed at a version the helper is not held to (the

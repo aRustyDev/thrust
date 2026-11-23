@@ -42,8 +42,8 @@ Then, from the changed crates C and the affected crates A (C and everything that
   * the target of a cell runs its passes when the binary it serves is in A (native-* serve thrust-server, worker-* serve
     thrust-worker), or when the suite itself (thrust-contract-tests) changed.
   * pg-adapter when thrust-adapters-selfhosted is in A; mutants (built on the native server) when thrust-server is in A or the
-    suite changed; workers (the Worker's wasm32 unit tests) when thrust-worker is in A; linux and macos (the release build of the
-    native server and of `migrate`, on each target, build.yml) when thrust-server or thrust-adapters-postgres is in A; wasm (the release build of the Worker
+    suite changed; workers (the Worker's wasm32 unit tests) when thrust-worker is in A; linux (the release build of the native
+    server and of `migrate`, build.yml) when thrust-server or thrust-adapters-postgres is in A; wasm (the release build of the Worker
     and of the edge Worker, build.yml) when thrust-worker or thrust-edge is in A.
 
 Fails open: a target the map below does not know runs on every change (and says so); `--full` runs everything.
@@ -54,12 +54,12 @@ import json
 import re
 import sys
 
-JOBS = ("ci-scripts", "deps", "lint", "bash", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "wasm", "macos", "web", "docs")
+JOBS = ("ci-scripts", "deps", "lint", "bash", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "wasm", "web", "docs")
 
 # The called workflow each job belongs to (ADR-0102): {workflow: (its jobs)}. A job in none is still a job of ci.yml itself. Every
 # migration stage moves its jobs in here; a job may be in one workflow only, and a name here must be one of JOBS (check_workflows).
 # ci.yml's `gate` lists these workflows too, as VERDICT_JOBS, and test_plan_ci.py holds the two equal.
-WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint", "bash"), "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux", "wasm", "macos")}
+WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint", "bash"), "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux", "wasm")}
 
 # The binary each target of scripts/contract.sh starts. Everything a cell runs against is built from it.
 TARGET_BINARY = {
@@ -74,8 +74,6 @@ MUTANTS_BINARY = "thrust-server"
 WORKER = "thrust-worker"
 # The crates whose binaries the `linux` job builds (build.yml): the native server, and the crate of the `migrate` binary.
 BUILD_CRATES = ("thrust-server", "thrust-adapters-postgres")
-# The jobs of build.yml that build those binaries natively, one per target (the same steps, the action build-native): `linux` and `macos`.
-NATIVE_JOBS = ("linux", "macos")
 # The crates of the two Workers the deploy bundle ships, which the `wasm` job builds in release (build.yml): the Worker and the edge Worker.
 WASM_CRATES = ("thrust-worker", "thrust-edge")
 
@@ -297,7 +295,7 @@ def plan(paths, dirs, deps, cells, full_reason=None):
     if WORKER in hit:
         jobs.add("workers")
     if any(crate in hit for crate in BUILD_CRATES):
-        jobs.update(NATIVE_JOBS)
+        jobs.add("linux")
     if any(crate in hit for crate in WASM_CRATES):
         jobs.add("wasm")
 

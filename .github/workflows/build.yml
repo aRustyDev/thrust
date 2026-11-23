@@ -26,7 +26,7 @@ on:
       plan:
         description: JSON array of the jobs to run
         type: string
-        default: '["linux","wasm","macos"]'
+        default: '["linux","wasm"]'
 
 permissions: {}
 
@@ -45,8 +45,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The steps are the action's (build-native), which `macos` and the jobs for the targets that follow share: they were written here first, and were
-      # an exact copy of what `macos` needs but for the runner, the cache key and the artifact's name, which are this job's inputs.
+      # The steps are the action's (build-native), which the jobs of build-extended.yml (the targets that are not required checks: macos, and the ones that
+      # follow) share: they were written here first, and were an exact copy of what those need but for the runner, the cache key and the artifact's name,
+      # which are the job's inputs.
       - uses: ./.github/actions/build-native
         with:
           name: linux
@@ -106,31 +107,12 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-  # The same two binaries as `linux`, for aarch64-apple-darwin: a hosted macOS runner (macos-15: three Apple M1 cores, 7 GB; standard runners are free
-  # in a public repository). Nothing else in CI runs on macOS (the tests and the contract suite are run on a Mac by hand),
-  # so a break that only this target sees (a crate that needs a Linux-only API, a C dependency that does not build with Apple's compiler) would be found
-  # at a desk and not in a pull request. Planned with `linux` (plan-ci.py). By hand: dispatch this workflow with the plan ["macos"].
-  macos:
-    if: contains(fromJSON(inputs.plan), 'macos')
-    runs-on: macos-15
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/build-native
-        with:
-          name: macos
-          target: aarch64-apple-darwin
-
   # ADR-0102: judges this workflow's jobs against the plan, through the action every called workflow uses (it runs assert-gate.sh and
   # sets the output only after that passed). `always()`, so it reports when a job was skipped, failed or cancelled. ci.yml's `gate`
   # requires the output: a `verdict` job that was itself skipped leaves this workflow `success` and proves nothing. The checkout is
   # here and not in the action, which is read from it.
   verdict:
-    needs: [linux, wasm, macos]
+    needs: [linux, wasm]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -147,4 +129,4 @@ jobs:
         with:
           needs: ${{ toJSON(needs) }}
           plan: ${{ inputs.plan }}
-          jobs: linux wasm macos
+          jobs: linux wasm

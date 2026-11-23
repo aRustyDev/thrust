@@ -1,0 +1,56 @@
+name: build-extended
+
+# The builds that are useful and are not required checks: a compile proof of the native server and `migrate` on macOS (Build phase, stage 3), and the targets
+# that follow it (a Windows and a BSD build, if the owner wants them here too). The owner's decision of 2026-11-23: "I'd prefer if macos build jobs weren't
+# required checks. These are useful, but I see them as lower priority checks that should run during either a pre-release check or nightly."
+#
+# NOT GATED: `ci.yml` does not call this workflow, `gate` does not read it, and a red run blocks nothing (not a pull request, and not a release candidate:
+# the staging deploy waits for `ci`'s `gate` and for nothing here). So it has no `plan` and no `verdict`, as deep.yml has none. It runs
+#   * every night (06:11 UTC, on `main`), which is also what saves the cache and keeps it from the seven days a repository's unread caches live;
+#   * when a release candidate is pushed (`rc/*`: the branch release-plz makes for the release pull request): the pre-release check;
+#   * by hand;
+#   * on a pull request that edits this file or the action it uses (build-native, which `linux` of build.yml uses too), so that the file is proved before it
+#     merges: GitHub dispatches only a workflow that is already on the default branch, as for deep.yml and e2e.yml. No other pull request starts it.
+# A red night is a finding for whoever reads the Actions tab, not a red check on anyone's pull request. Scheduled runs are for the default branch only, and
+# GitHub disables a schedule in a public repository after 60 days without activity.
+#
+# The jobs are the build-native action's steps on a runner of their own: it checks that the compiler's host is the target the job claims, builds `thrust-server`
+# and `migrate` in release with the repository's commands, checks that both exist, and uploads them for three days. Nothing is published, signed or attested.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "11 6 * * *"
+  push:
+    branches:
+      - rc/*
+  pull_request:
+    paths:
+      - .github/workflows/build-extended.yml
+      - .github/actions/build-native/**
+
+permissions: {}
+
+# A newer push to the same release candidate, or to the same pull request, replaces the run in flight; a night's run is never replaced by another ref's.
+concurrency:
+  group: build-extended-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+
+jobs:
+  # aarch64-apple-darwin, on a hosted macOS runner (macos-15: three Apple M1 cores, 7 GB; the standard runners are free in a public repository). Nothing
+  # else in CI runs on macOS (the tests and the contract suite are run on a Mac by hand), so a break that only this target sees (a crate that needs an API
+  # Linux has and macOS has not, a C dependency that Apple's compiler refuses) would be found at a desk. The first run (#365) built both binaries in 234 s
+  # with no cache: the server's release build 173 s, `migrate` 37 s.
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/build-native
+        with:
+          name: macos
+          target: aarch64-apple-darwin
