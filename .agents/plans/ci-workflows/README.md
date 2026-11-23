@@ -32,9 +32,9 @@ current release flow is in [cicd-review](../cicd-review/README.md).
 Phase documents (`phases/NNNN-*.md`) are written when a phase starts, not before. Phase numbers are allocated across the
 whole repository: Phase 0 of this plan is `0001` and Phase 1 is `0002`; each later phase takes the next free number.
 
-## Status (2026-11-17)
+## Status (2026-11-22)
 
 Phase 0, the foundation, is done and merged. Phase 1, the migration, is **done**: its six stages are merged (`documentation.yml`, #254; `security.yml`, #258;
 `web.yml`, #264; `lint.yml`, #269; `test.yml`, split in two, #275 and #281; `e2e.yml`, #289), `ci.yml` holds only `changes`, the calls and `gate`, and its
 acceptance is recorded in [phases/0002-migration.md](phases/0002-migration.md), with the cost after it in [research 0019](research/0019-ci-baseline-after-migration.md).
-Phase 2, Test, is planned in [phases/0003-test.md](phases/0003-test.md) and its four questions are answered. All eight of its stages are done, and its acceptance is recorded there and in [research 0020](research/0020-ci-baseline-after-the-test-phase.md): six of its seven criteria hold, and the seventh waits on one answer from the owner. Phases 3 to 14 are not started; see the table at the end of `PLAN.md`.
+Phase 2, Test, is planned in [phases/0003-test.md](phases/0003-test.md) and its four questions are answered. All eight of its stages are done, and its acceptance is recorded there and in [research 0020](research/0020-ci-baseline-after-the-test-phase.md): all seven of its criteria hold, the last by the owner's decision of 2026-11-22 to leave the rest of G-5 by hand, so **Phase 2 is done**. Phases 3 to 14 are not started; see the table at the end of `PLAN.md`.
