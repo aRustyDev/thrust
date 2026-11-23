@@ -80,7 +80,13 @@ exercised password-update recovery; the interrupted-update path still needs an A
    supplied resource identifiers, distinct production data resources, Preview-owned rooms and
    disabled email. It does not establish ownership or origin of a supplied ID; its caller must
    verify those against trusted live inventory. It is not yet wired to deployment. Configure
-   Access before making Preview URLs reachable.
+   Access before making Preview URLs reachable. `infra/cloudflare/preview-data-resources.sh` now inventories,
+   creates and verifies the reserved R2/Queue pairs, and stages a one-day R2 expiry rule only after a detached
+   Preview closes; its generated hermetic controls cover creation, partial-pair refusal, bound-queue refusal and
+   delayed cleanup. It is intentionally not wired to Actions: first clear/migrate the legacy prefix and configure
+   the separate narrowly scoped R2/Queues token. Cloudflare has no provisionable rate-limit namespace object, so
+   a trusted allocator and an audited non-production namespace range are still required before this is a complete
+   isolated configuration.
 3. Deploy the exact built revision, check the actual applied binding identities and smoke the
    Preview, then publish its Flagship target. `scripts/preview-result.py` currently checks
    Hyperdrive, R2 and queue binding names only: establish the live API response shape and add
