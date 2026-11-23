@@ -314,8 +314,9 @@ if workers_wf:
 # looks for one only (a build that made no `migrate` would pass), a proof that does not check what it builds for (a job named macos that landed on a Linux runner would upload Linux
 # binaries under its name), a cache key shared with another job (a release profile saved under it evicts that job's entries), and a job on the wrong runner. Each is a line, checked as
 # text, and the mutant driver changes each.
-# job: (its workflow, its runner, its target). `linux` is a required check (build.yml, called by ci.yml); `macos` is not (build-extended.yml, never called, never in the gate).
-NATIVE = {"linux": ("build", "ubuntu-24.04", "x86_64-unknown-linux-gnu"), "macos": ("build-extended", "macos-15", "aarch64-apple-darwin")}
+# job: (its workflow, its runner, its target, the suffix of its executables). `linux` is a required check (build.yml, called by ci.yml); `macos` is not (build-extended.yml, never called, never in the gate).
+NATIVE = {"linux": ("build", "ubuntu-24.04", "x86_64-unknown-linux-gnu", ""), "macos": ("build-extended", "macos-15", "aarch64-apple-darwin", ""),
+          "windows": ("build-extended", "windows-2025", "x86_64-pc-windows-msvc", ".exe")}
 native_action_path = ".github/actions/build-native/action.yml"
 native_action = read_text(native_action_path) or ""
 check(f"{native_action_path} exists", native_action != "", True)
@@ -326,33 +327,44 @@ check(f"{native_action_path}: it builds migrate with the command the deploy bund
 check(f"{native_action_path}: it builds nothing but in release (no cargo build line without --release)",
       [l for l in native_action.splitlines() if re.search(r"run: .*cargo build", l) and "--release" not in l], [])
 check(f"{native_action_path}: it checks for each of the two binaries it built, and fails when one is missing",
-      '        for bin in thrust-server migrate; do\n          test -x "target/release/$bin" || { echo "::error::cargo built nothing at target/release/$bin"; exit 1; }\n        done\n' in native_action, True)
+      '      env:\n        EXE: ${{ inputs.exe }}\n      run: |\n        set -eu\n        for bin in thrust-server migrate; do\n'
+      '          test -x "target/release/$bin$EXE" || { echo "::error::cargo built nothing at target/release/$bin$EXE"; exit 1; }\n        done\n' in native_action, True)
+check(f"{native_action_path}: its input exe is optional and empty by default (only Windows has a suffix)", "  exe:\n    description: >-\n" in native_action and
+      '    required: false\n    default: ""\n' in native_action, True)
 check(f"{native_action_path}: it checks that the runner's Rust host is the target the job claims, before it builds anything",
       "      env:\n        TARGET: ${{ inputs.target }}\n      run: |\n        set -eu\n        host=\"$(rustc -vV | sed -n 's/^host: //p')\"\n        test \"$host\" = \"$TARGET\" || { echo \""
       in native_action and 0 < native_action.find("The runner builds for the target") < native_action.find("Build thrust-server (release)"), True)
-check(f"{native_action_path}: its cache key is derived from the job's name, saved on main only",
-      "        cache-key: build-${{ inputs.name }}\n        save-cache: ${{ github.ref == 'refs/heads/main' }}\n" in native_action, True)
+# A post step (rust-cache saves the cache in its post step) of an action that sits two composite actions deep gets the wrong inputs from the runner, reads `save-if` as false and
+# returns without a word: the cache of `linux` stopped being saved when its steps moved into this action, and the macOS cache was never created (runs 45108571272 and 45117020873
+# against the flat `wasm` job's, on `main`). So the action must not call setup-rust, and each job must, one composite deep.
+check(f"{native_action_path}: it does not call setup-rust (two composites deep, the cache would never be saved)",
+      [l for l in native_action.splitlines() if "actions/setup-rust" in l and not l.strip().startswith("#")], [])
+check("the only composite actions that call setup-rust are build-bundle, which only restores a cache (its `save-cache` is its caller's input and defaults to false), and no other",
+      sorted(d for d in os.listdir(os.path.join(ROOT, ".github", "actions")) if "uses: ./.github/actions/setup-rust" in (read_text(f".github/actions/{d}/action.yml") or "")), ["build-bundle"])
 check(f"{native_action_path}: it uploads the binaries under the job's name and target, fails when there are none, and keeps them three days",
-      "        name: build-${{ inputs.name }}-${{ inputs.target }}\n        path: |\n          target/release/thrust-server\n          target/release/migrate\n"
+      "        name: build-${{ inputs.name }}-${{ inputs.target }}\n        path: |\n          target/release/thrust-server${{ inputs.exe }}\n          target/release/migrate${{ inputs.exe }}\n"
       "        if-no-files-found: error\n        retention-days: 3\n" in native_action, True)
 check(f"{native_action_path}: it has no secret, no environment and no id-token: a compile proof publishes and attests nothing",
       [l for l in native_action.splitlines() if re.search(r"secrets\.|environment:|id-token|attestations|contents: write", l) and not l.strip().startswith("#")], [])
 all_text = "".join(read_text(f".github/workflows/{f}") or "" for f in sorted(os.listdir(os.path.join(ROOT, ".github", "workflows"))) if f.endswith(".yml"))
 all_text += "".join(read_text(f".github/actions/{d}/action.yml") or "" for d in sorted(os.listdir(os.path.join(ROOT, ".github", "actions"))) if os.path.isdir(os.path.join(ROOT, ".github", "actions", d)))
-check("the only cache key that begins with build- is the native action's, derived from a job's name (two jobs share a cache only if they share a name)",
-      re.findall(r"cache-key: (build-[^\n]+)", all_text), ["build-${{ inputs.name }}"])
-check("no two native jobs share a target (the artifact of each is named after its name and target)", sorted(t for _, _, t in NATIVE.values()), sorted({t for _, _, t in NATIVE.values()}))
+check("the cache keys that begin with build- are the native jobs' own, one each, which no other job uses",
+      sorted(re.findall(r"cache-key: (build-[^\n]+)", all_text)), sorted(f"build-{job}" for job in NATIVE))
+check("no two native jobs share a target (the artifact of each is named after its name and target)", sorted(v[2] for v in NATIVE.values()), sorted({v[2] for v in NATIVE.values()}))
 check("the native job that is a required check, linux, is a job of a called workflow, and macos is the job of none (it is not in the gate)",
       ([w for w, jobs in pc.WORKFLOWS.items() if "linux" in jobs], [w for w, jobs in pc.WORKFLOWS.items() if "macos" in jobs], "macos" in pc.JOBS), (["build"], [], False))
-for job, (job_wf, runner, target) in NATIVE.items():
+for job, (job_wf, runner, target, exe) in NATIVE.items():
     job_path = f".github/workflows/{job_wf}.yml"
     job_text = read_text(job_path) or ""
     check(f"{job_path} exists", job_text != "", True)
     job_block = block(job_text, job)
     check(f"{job_path}: {job} runs on {runner}, a pinned image", f"    runs-on: {runner}\n" in job_block, True)
     check(f"{job_path}: {job} calls build-native with its own name and target ({job}, {target}), after the checkout",
-          f"      - uses: ./.github/actions/build-native\n        with:\n          name: {job}\n          target: {target}\n" in job_block
-          and 0 < job_block.find("uses: actions/checkout@") < job_block.find("uses: ./.github/actions/build-native"), True)
+          f"      - uses: ./.github/actions/build-native\n        with:\n          name: {job}\n          target: {target}\n" + (f"          exe: {exe}\n" if exe else "") in job_block
+          and ("exe:" not in job_block if not exe else True)
+          and 0 < job_block.find("uses: actions/checkout@") < job_block.find("uses: ./.github/actions/setup-rust") < job_block.find("uses: ./.github/actions/build-native"), True)
+    check(f"{job_path}: {job} sets Rust up itself, one composite deep, with a cache key of its own saved on main only",
+          f"      - uses: ./.github/actions/setup-rust\n        with:\n          cache-key: build-{job}\n          save-cache: ${{{{ github.ref == 'refs/heads/main' }}}}\n" in job_block, True)
     check(f"{job_path}: {job} has no step of its own that runs a command (the steps are the action's)",
           [l for l in job_block.splitlines() if re.match(r"^\s+(- )?run:", l)], [])
     check(f"{job_path}: {job} has no secret, no environment and no id-token: a compile proof publishes and attests nothing",
@@ -380,7 +392,7 @@ if ext_text is not None:
           all("    permissions:\n      contents: read\n" in block(ext_text, j) for j in job_ids(ext_text)), True)
     check(f"{EXT_PATH} has one run in flight per ref, and a push or a pull request replaces the one before it",
           "concurrency:\n  group: build-extended-${{ github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}\n" in ext_text, True)
-    check(f"{EXT_PATH} has the job macos and no other (the targets that follow are added to it on purpose)", job_ids(ext_text), ["macos"])
+    check(f"{EXT_PATH} has the jobs macos and windows and no other (the targets that follow are added to it on purpose)", job_ids(ext_text), ["macos", "windows"])
 
 # The bash job (Lint phase, stage 1) runs shellcheck over the scripts the repository maintains, through .github/scripts/check-shell.sh. Four things about
 # it can be wrong and leave the job looking healthy until the runner differs from a laptop: a shellcheck installed at a version the helper is not held to (the
@@ -404,6 +416,30 @@ if bash_wf:
     check(f"{bash_path}: {BASH_JOB} runs the helper, which carries the control, and not shellcheck by hand", "        run: sh .github/scripts/check-shell.sh\n" in bash_block, True)
     check(f"{bash_path}: {BASH_JOB} runs no other command", len([l for l in bash_code if re.match(r"^\s+run:", l)]), 1)
     check(f"{bash_path}: {BASH_JOB} sets up no Rust toolchain or cache (it reads shell)", [l for l in bash_code if "setup-rust" in l or "cache" in l], [])
+
+# The deps job runs actionlint, and actionlint runs shellcheck over the shell of every workflow's `run:` blocks: the one on PATH, which on the image is 0.9.0 and does not know
+# SC2329. So the workflows' shell was read by an older shellcheck than the scripts' (Lint phase, stage 1, probe C). Four things can be wrong and leave the job green: no install (the
+# image's answers, and only lint-actionlint.sh's control refuses it, at run time), an install at a version that is not the one the scripts are held to, an install AFTER the actionlint
+# step (PATH is read when it runs), and an actionlint run by hand and not through lint-actionlint.sh (which hands it the shellcheck and carries the control). Each is a line, as text.
+DEPS_JOB = "deps"
+deps_wf = next((w for w, jobs in pc.WORKFLOWS.items() if DEPS_JOB in jobs), None)
+check(f"the job {DEPS_JOB} is a job of a called workflow", deps_wf is not None, True)
+if deps_wf and bash_wf:
+    deps_path = f".github/workflows/{deps_wf}.yml"
+    deps_block = block(read_text(deps_path) or "", DEPS_JOB)
+    deps_code = [l for l in deps_block.splitlines() if not l.strip().startswith("#")]
+    deps_installs = re.findall(r"^          tool: shellcheck@(\S+)$", deps_block, re.M)
+    check(f"{deps_path}: {DEPS_JOB} installs shellcheck once, at the version check-shell.sh is held to ({held_to.group(1) if held_to else None})",
+          deps_installs == [held_to.group(1)] if held_to else None, True)
+    check(f"{deps_path}: {DEPS_JOB} installs it with install-action, pinned to a commit, the same one {BASH_JOB} uses",
+          re.findall(r"^      - uses: (taiki-e/install-action@[0-9a-f]{40}) # v\S+\n        with:\n          tool: shellcheck@", deps_block, re.M)
+          == re.findall(r"^      - uses: (taiki-e/install-action@[0-9a-f]{40}) # v\S+\n        with:\n          tool: shellcheck@", bash_block, re.M)
+          and len(re.findall(r"^      - uses: taiki-e/install-action@", deps_block, re.M)) == 1, True)
+    install_at = next((i for i, l in enumerate(deps_code) if "tool: shellcheck@" in l), -1)
+    actionlint_at = next((i for i, l in enumerate(deps_code) if "lint-actionlint.sh" in l), -1)
+    check(f"{deps_path}: {DEPS_JOB} installs shellcheck before the step that runs actionlint", 0 <= install_at < actionlint_at, True)
+    check(f"{deps_path}: {DEPS_JOB} runs actionlint through lint-actionlint.sh, once, and not by hand",
+          (len([l for l in deps_code if "lint-actionlint.sh" in l]), [l for l in deps_code if re.match(r"^\s+\"?(\$RUNNER_TEMP/)?actionlint\"?(\s|$)", l)]), (1, []))
 
 # The wasm job (Phase 3, stage 2) builds the two Workers the deploy bundle ships, in release, with the bundle's own commands, and shares the bundle's cache key so that the next
 # release candidate or tag restores what `main` saved. Six things about it can be wrong and leave the job green: a Worker built by another command than the bundle's (the proof would be of
