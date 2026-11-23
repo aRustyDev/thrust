@@ -126,7 +126,7 @@ others follow; the one with a measured saving second; the probes, which cost not
 
 | # | Stage | Job (proposed) | Exists today as | What the passes have to settle | Status |
 |---|---|---|---|---|---|
-| 1 | linux | `linux` | `migrate` (release) in the bundle; `thrust-server` (debug) in the cells; `thrust-server` (release) only in the `bench` and `scale` passes | **The template**: `build.yml`, its `verdict`, `ci.yml`'s `build` call, `gate`'s `needs`, the planner's `JOBS`, `WORKFLOWS` and path rules, the wiring test and the mutants; what an artifact is; which triples (question 2) | not started |
+| 1 | linux | `linux` | `migrate` (release) in the bundle; `thrust-server` (debug) in the cells; `thrust-server` (release) only in the `bench` and `scale` passes | **The template**: `build.yml`, its `verdict`, `ci.yml`'s `build` call, `gate`'s `needs`, the planner's `JOBS`, `WORKFLOWS` and path rules, the wiring test and the mutants; what an artifact is; which triples (question 2) | **passes 1 to 7 done** (#352, merged 2026-11-23, and this record; [below](#stage-1-in-detail-linux-the-template)): the job is 134 s cold and 101 to 102 s with the cache (−24%), off every critical path; a break that only the release profile sees turned it, its `verdict` and `gate` red and nothing else (probe B), where every debug-built job stayed green |
 | 2 | wasm | `wasm` | the bundle's two `worker-build` runs (73 s and 17 s, after 106 s to install the tool), the cells' wrangler build, the provisioner's | whether the Workers are built once and shared or twice; **the `deploy-release` cache saved from `main`** (hypothesis above); installing `worker-build` as a prebuilt binary instead of compiling it; whether `wrangler` is needed in a build at all; the exact-duplicate web action below | not started |
 | 3 | macos | `macos` | nothing | the probe: does the server build on `aarch64-apple-darwin`, how long, what artifact; whether a cache fits the budget | not started |
 | 4 | windows | `windows` | nothing | the probe: does `ring` build on `x86_64-pc-windows-msvc`; the shell the steps run in (bash is on the runner) | not started |
@@ -134,6 +134,71 @@ others follow; the one with a measured saving second; the probes, which cost not
 | 6 | bsd | `bsd` | nothing | question 2; a VM on a hosted runner or a cross toolchain: a survey of public solutions comes first; the stage is dropped if neither is worth its time | not started |
 
 Each stage's section (purpose, acceptance, state machine, steps, a survey of public solutions, custom code and its probe, the pass log) is written **when the stage starts**, not before.
+
+### Stage 1 in detail: `linux`, the template
+
+**Purpose and use cases.** `linux` proves that the native server and the migration binary still build in **release** for the runner's own target, `x86_64-unknown-linux-gnu`, and keeps what it built for three days. It is also the stage that makes `build.yml` exist: the workflow, its `verdict`, `ci.yml`'s call, the gate's `needs`, the planner's job and workflow, and the wiring checks and mutants that every later stage inherits. It runs for a pull request or a push that affects `thrust-server` or `thrust-adapters-postgres` (the crate of `migrate`), for a change of `build.yml` itself and for a full run, and alone by dispatching `build.yml` with the plan `["linux"]`.
+
+**Acceptance.**
+1. It fails when the release build of either binary fails, and when either binary is missing, shown by a control.
+2. A planned `linux` that fails turns `build / verdict` and `gate` red: structurally (the wiring checks and the 41 new mutants, below) and live (probe B, below).
+3. It is planned for exactly the changes above, tested against an independent model.
+4. It publishes, signs and attests nothing, and holds no secret, environment or `id-token`.
+5. It is documented: `cicd.md`, `running.md` (a row and a runbook), the workflows index.
+
+**Steps** (`.github/workflows/build.yml`): checkout; `setup-rust` (toolchain from `rust-toolchain.toml`, a `rust-cache` keyed `build-linux`, saved on `main` only); `cargo build --release --locked -p thrust-server`; `cargo build --release --locked -p thrust-adapters-postgres --features native --bin migrate` (the line `build-bundle` builds it with, held equal by the wiring test); a check that both binaries exist; an upload of both as `build-linux-x86_64-unknown-linux-gnu` for three days.
+
+**What it costs** (run `45094823898` of #352, a full run, `build / linux`; **cold**, as the run of every pull request is, because the cache is saved on `main` only) [re-run: the job's log]:
+
+| Step | Seconds | Note |
+|---|---|---|
+| checkout | 6.1 | |
+| `setup-rust`: toolchain, cache restore | 11.5 | "No cache found." |
+| `cargo build --release --locked -p thrust-server` | **86.5** | cargo: "Finished `release` profile in 1m 26s" |
+| `cargo build --release … --bin migrate` | 21.7 | `thrust-adapters-postgres` is compiled a second time, with the feature `native` |
+| the check, the upload | 2.7 | two files, 5,207,243 bytes zipped |
+| **the job** | **134** | |
+
+What it shows:
+- **It is cheap, and on no critical path.** The run took 594 s and had 48 jobs (the 46 of research 0020, and `linux` and `verdict`); the e2e cell, 552 s, set the wall clock; `build / linux` is the 12th longest job, between `hermetic` (143 s) and `ci-scripts` (131 s). So it runs wherever the planner plans it, with no reason to make it a full-run-only job.
+- **The repository's `[profile.release]` is the Worker's** (`opt-level = "s"`, fat LTO, one codegen unit), and the native server it makes is 10.2 MB (`thrust-server`: 10,186,032 bytes; `migrate`: 2,568,016), a dynamically linked, not stripped, x86-64 ELF for GNU/Linux [re-run: `file` on the downloaded artifact, inspected and not run]. A server for distribution may want a profile of its own (`opt-level = 3`, a stripped binary, a static one): that is a Phase 4 and `docker` question (stage 5), and nothing here decides it.
+- **`migrate` costs 21.7 s on top** because the server's build and `migrate`'s build need `thrust-adapters-postgres` with different features. The two commands stay two, because the second is the command the deploy bundle uses, and the proof is of that command.
+- **The artifact is 5.2 MB for three days** (it expires 2026-11-26 for this run). Six targets will multiply it, so the retention stays short; the limit of GitHub's artifact storage was not looked up here **[unverified]**.
+
+**Survey of public solutions** (what a native Linux release build needs, and the candidates):
+
+| Candidate | Read from | Fit | Decision |
+|---|---|---|---|
+| `cargo build` | the toolchain | the build of the runner's own target; the commands the repository already runs | **chosen** |
+| `actions/upload-artifact` | already pinned in the repository (`v7.0.2`) | the upload of a short-lived workflow artifact | **chosen** |
+| `taiki-e/upload-rust-binary-action` | its README and `action.yml` | builds a Rust binary and **uploads it to a GitHub Release** (`contents: write`; `tar.gz` named `$bin-$target`; `build-tool` cargo, cross or cargo-zigbuild) | rejected here: writing to a release is Phase 4's; **a candidate for Release** |
+| `houseabsolute/actions-rust-cross` | its README | cross-compiles with `cross`; "for Linux and BSD targets, an x86-64 Linux runner"; its example matrix includes FreeBSD, Windows and macOS | rejected for a native build (the README says a native Arm build does not need it); **a candidate for `bsd`** (stage 6), to be read again and pinned there |
+| `Swatinem/rust-cache` | already used by `setup-rust` | the cache of the dependencies | **chosen**, as every Rust job: whether it pays for this job is pass 5 |
+
+**Custom code, and why it has no built-in.** One piece: the check that both binaries exist (a `for` over two names and `test -x`). `cargo build --bin <name>` would fail on a renamed binary, but not on one written elsewhere (a `build.target-dir` or `--target` in `.cargo/config.toml` moves it), and `upload-artifact`'s `if-no-files-found: error` is documented to fail when **no** file is found, which is not the same as one of two missing **[unverified: how it treats one missing of two]**. The check says which binary is missing before the upload does. Its control is the step's own text, taken from `build.yml`: it fails in a directory with no binary, with only `thrust-server` and with only `migrate`, and passes with both (`scratchpad/linux-check-control.py`, 4 of 4).
+
+**The probes** (#354, a draft opened on `main`'s new head, **closed unmerged**, its branch deleted; it changed one file, `crates/server/src/main.rs`):
+
+| Probe | Run | What it showed |
+|---|---|---|
+| A: a comment line | `45095952963`, an affected-only run | The planner planned `build / linux` with `deps`, `lint`, `hermetic`, `ci-scripts`, the four `mutants` legs and the ten native cells, and skipped `pg-adapter`, `workers`, `web`, `docs` and `deny`. `gate` passed. `linux` took 101 s, with a cache hit from `main`. The longest job was `mutants` leg 0, 309 s |
+| B: `#[cfg(not(debug_assertions))] compile_error!(…)` | `45096904701` | **`build / linux` failed in 40 s with the planted error** (`error: PROBE B: a break that only the release profile sees`, exit 101), `build / verdict` failed, and `gate` failed: `GATE FAIL: build was expected to run and its result is 'failure'`. Of the run's 29 jobs, 21 succeeded, 5 were skipped and 3 failed: those three. The verdicts of `lint` and `test` said `pass`: **nothing else saw the break**, because the contract cells, the mutants, the tests and clippy build in debug |
+
+Probe B is the stage's reason to exist, and the live control of the invariant that a planned job that fails turns the gate red, for a job in a workflow that did not exist before this stage.
+
+**Failure modes (pass 2).** A compile error that only the release profile has (an item behind `cfg(debug_assertions)`, a link error under LTO): the cells build in debug and would not see it, which is the stage's reason to exist (probe B shows it). A lockfile that `--locked` refuses. Cargo exiting 0 and building nothing (the check). A run of 30 minutes (the timeout; the job takes 134 s). A runner without the toolchain's download (the same as every Rust job). Its cache entry evicting another's, in a repository at its 10 GB limit (pass 5).
+
+**Pass log.**
+
+| Pass | Where | Evidence |
+|---|---|---|
+| 1 PoC | #352's run `45094823898` | `build / linux` green on a real input (the commit itself); the check's control (4 of 4); the artifact downloaded and inspected |
+| 2 Prototype | #352's run, `main`'s push run `45095756737`, the dispatch `45096751902`, probe A | it runs on its real triggers: `workflow_call` from `ci.yml` in a full run (#352's, and `main`'s own push run for the merge, green, 167 s because it saved the cache), in an affected-only run (probe A), and alone by `workflow_dispatch` with the plan `["linux"]` (on `main`: a new workflow cannot be dispatched from a branch, because GitHub reads its file from the default branch, so the pull request's own run was the proof of concept); its failure modes are listed above |
+| 3 Documented | #352 | `cicd.md` (row, planner rule, examples re-run through the planner, the counts), `running.md` (rows and a runbook), the workflows index; header comment of `build.yml` |
+| 4 MVP | #352 | in the gate: the planner's `JOBS` and `WORKFLOWS`, `ci.yml`'s call, `gate`'s `needs` and `VERDICT_JOBS`, `assert-gate.sh`'s list; `test_plan_ci.py` 7048, `test_workflow_wiring.py` 196, `test-ci-scripts.sh` 221, `mutate_gate.py` **313 of 313 killed** (272 before; 41 new: 18 made for the new call and file, 23 by hand), 12 that change nothing survive; `ci-commands.py` against `main`: 3 jobs appear, none is gone, the one changed job is the gate's `VERDICT_JOBS`; the 28 commands of `deps`, `deny`, `fmt` and clippy pass; green on a full run (#352's `45094823898` and `main`'s `45095756737`, `gate` by name) and on an affected-only run (probe A), and **red where it must be** (probe B) |
+| 5 Caching | the dispatch `45096751902` on `main`, probe A's run `45095952963` | **Measured, and it pays: 134 s cold to 101 and 102 s warm (−24%).** The cold figure is #352's run (`build / linux`, "No cache found"); `main`'s own run of the merge took 167 s because it saved the cache (222.8 MB: `v0-rust-build-linux-Linux-x64-2fd77104-272d588c`). Warm, on `main` (dispatch of `build.yml` with the plan `["linux"]`, "Cache hit … full match") and on a pull request (probe A: **a pull request's run restores the cache `main` saved**, which the plan had listed as not yet measured): restore 4.3 s (the step total 17.7 s against 11.5 s, which had no download), the server build 86.5 s to 54.9 s, `migrate` 21.7 s to 13.6 s. What the cache holds is the dependencies: the workspace's own crates are recompiled (`cache-workspace-crates` is off), and the fat LTO runs each time. The key is `rust-cache`'s own (prefix, `shared-key: build-linux`, the job, a hash of the Rust environment, a hash of the lockfile), and it changes with the lockfile: the repository's other caches show four generations of the same job's key (`209984db`, `e40323b1`, `7bbf394d`, `272d588c`). The repository's caches are 10,370 MiB of 10,240 with this entry in (26 entries), so it costs the oldest entry its place (the `mutants` cache of 2026-11-19, 708 MB, last used 11-20): kept, because 32 s of 134 is a saving no other job of the workflow gives |
+| 6 Parallelization | measured on the same runs | **No change.** The job is on no critical path (a full run: the e2e cell, 552 s; an affected-only run of a server change: `mutants` leg 0, 309 s), so making it shorter would shorten nothing. Its two commands share one `target/`, and a second job for `migrate` would pay the checkout and the setup (about 18 s) to save 13.6 s |
+| 7 CPU minimization | runner-seconds | **No change.** A planned `linux` costs 101 to 134 runner-seconds, about 2% of a full run's median (5,240 s, research 0020), and it is planned by crate, as the other jobs are. A rule that spared it for a change to a crate's tests would need the planner to tell a test file from a source file, which it does not (a crate's files are the crate), for a saving of the same 2%. Not done |
 
 ## Action candidates
 
