@@ -34,7 +34,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.abspath(os.path.join(HERE, ".."))
 ROOT = os.path.abspath(os.path.join(SCRIPTS, "..", ".."))
 PLAN, GATE = "plan-ci.py", "assert-gate.sh"
-CI, DOC, SEC, WEB, LNT, TST = "ci.yml", "documentation.yml", "security.yml", "web.yml", "lint.yml", "test.yml"  # ci.yml, and each called workflow
+CI, DOC, SEC, WEB, LNT, TST, BLD = "ci.yml", "documentation.yml", "security.yml", "web.yml", "lint.yml", "test.yml", "build.yml"  # ci.yml, and each called workflow
 ACT = "verdict/action.yml"  # the action every called workflow's `verdict` job calls
 DEEP = "deep.yml"  # not a called workflow: the nightly run of the randomized tests, which nothing waits for
 TOOLS = "contract-pass-tools/action.yml"  # what a pass needs on the runner; the e2e cells are the longest job of every full run
@@ -50,22 +50,24 @@ TARGET_PATH = {
     WEB: ".github/workflows/web.yml",
     LNT: ".github/workflows/lint.yml",
     TST: ".github/workflows/test.yml",
+    BLD: ".github/workflows/build.yml",
     ACT: ".github/actions/verdict/action.yml",
     DEEP: ".github/workflows/deep.yml",
     TOOLS: ".github/actions/contract-pass-tools/action.yml",
 }
 # The workflows that tests judge as files: a mutant of one of these must fail test_workflow_wiring.py.
-WIRED = (CI, DOC, SEC, WEB, LNT, TST, ACT, DEEP, TOOLS)
+WIRED = (CI, DOC, SEC, WEB, LNT, TST, BLD, ACT, DEEP, TOOLS)
 
 # The called workflows, each with its file, its jobs (in the order the file has them), and the text of ci.yml's `gate` needs that names its
 # call and what that becomes without it. A stage of the migration adds a row, and every mutant below that is written for "a called
 # workflow" is made for it; a row with several jobs gets the mutants only several jobs can have.
 CALLS = [
-    (DOC, "documentation", ("docs",), "web, documentation, security]", "web, security]"),
-    (SEC, "security", ("deny",), "documentation, security]", "documentation]"),
+    (DOC, "documentation", ("docs",), "web, documentation, security, build]", "web, security, build]"),
+    (SEC, "security", ("deny",), "documentation, security, build]", "documentation, build]"),
     (WEB, "web", ("web",), "lint, web, documentation", "lint, documentation"),
     (LNT, "lint", ("deps", "lint"), "test, lint, web", "test, web"),
     (TST, "test", ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "changes, test, lint", "changes, lint"),
+    (BLD, "build", ("linux",), "security, build]", "security]"),
 ]
 CELL_JOB = "contract"  # the job that runs the contract cells; the workflow that holds it gets the mutants of the cells (call_mutants)
 
@@ -125,8 +127,8 @@ def call_mutants():
                  "      - name: Collect the per-cell pass markers\n        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2\n"
                  "        with:\n          pattern: cell-ok-*\n          path: reported\n          merge-multiple: true\n"
                  "      - name: Assert the planned set ran and passed\n"),
-                (CI, "the gate is still given the planned cells", "          VERDICT_JOBS: documentation security web lint test\n",
-                 "          VERDICT_JOBS: documentation security web lint test\n          PLANNED: ${{ needs.changes.outputs.cells || '[]' }}\n"),
+                (CI, "the gate is still given the planned cells", "          VERDICT_JOBS: documentation security web lint test build\n",
+                 "          VERDICT_JOBS: documentation security web lint test build\n          PLANNED: ${{ needs.changes.outputs.cells || '[]' }}\n"),
                 (target, f"{w}: the verdict call passes no cell job", "          cell-job: contract\n", ""),
                 (target, f"{w}: the verdict call passes no cells", "          cells: ${{ inputs.cells }}\n", ""),
                 (target, f"{w}: the verdict call passes other cells than it was given", "cells: ${{ inputs.cells }}\n", "cells: '[]'\n"),
@@ -177,11 +179,12 @@ MUTANTS = [
     (PLAN, "the oracle's files run no hermetic", re.compile(r'(\(r"\^tools/oracle-v1/", \{"jobs": \[)"hermetic", '), r"\1"),
     (PLAN, "--full runs only the matrix", "        return set(JOBS), list(cells),", '        return {"contract"}, list(cells),'),
     # --- plan-ci.py: the workflow files that run the checks, and the called workflows (ADR-0102)
-    (PLAN, "a workflow that runs the checks, web.yml, is not run-everything", "|documentation|security|web)\\.yml$", "|documentation|security)\\.yml$"),
-    (PLAN, "a workflow that runs the checks, documentation.yml, is not run-everything", "|lint|documentation|security|web)", "|lint|security|web)"),
+    (PLAN, "a workflow that runs the checks, web.yml, is not run-everything", "|documentation|security|web|build)\\.yml$", "|documentation|security|build)\\.yml$"),
+    (PLAN, "a workflow that runs the checks, documentation.yml, is not run-everything", "|lint|documentation|security|web|build)", "|lint|security|web|build)"),
     (PLAN, "a workflow that runs the checks, lint.yml, is not run-everything", "|test|lint|documentation", "|test|documentation"),
     (PLAN, "a workflow that runs the checks, test.yml, is not run-everything", "|contract-cell|test|lint", "|contract-cell|lint"),
-    (PLAN, "a workflow that runs the checks, security.yml, is not run-everything", "|documentation|security|web)", "|documentation|web)"),
+    (PLAN, "a workflow that runs the checks, security.yml, is not run-everything", "|documentation|security|web|build)", "|documentation|web|build)"),
+    (PLAN, "a workflow that runs the checks, build.yml, is not run-everything", "|documentation|security|web|build)", "|documentation|security|web)"),
     (PLAN, "the verdict action is not run-everything", re.compile(r'(\(r"\^\\\.github/actions/verdict/", )FULL'), r"\1{}"),
     (PLAN, "a job may be in two workflows", "            if job in seen:", "            if False:"),
     (PLAN, "a workflow may list a name that is not a job", "            if job not in jobs:", "            if False:"),
@@ -207,11 +210,12 @@ MUTANTS = [
     (GATE, "an unplanned marker is accepted", '[ -z "$extra" ] ||', "true ||"),
     (GATE, "the cell job with zero cells passes", '[ -s planned.txt ] || fail "the $CELLS job is expected', 'true || fail "the $CELLS job is expected'),
     (GATE, "an input may be missing", '[ -n "$value" ] || fail "$input is not set"', 'true || fail "$input is not set"'),
-    (GATE, "the gate forgets the documentation workflow", "documentation security web lint test}\"", "security web lint test}\""),
-    (GATE, "the gate forgets the security workflow", "security web lint test}\"", "web lint test}\""),
-    (GATE, "the gate forgets the web workflow", " web lint test}\"", " lint test}\""),
-    (GATE, "the gate forgets the lint workflow", " lint test}\"", " test}\""),
-    (GATE, "the gate forgets the test workflow", " test}\"", "}\""),
+    (GATE, "the gate forgets the documentation workflow", "documentation security web lint test build}\"", "security web lint test build}\""),
+    (GATE, "the gate forgets the security workflow", "security web lint test build}\"", "web lint test build}\""),
+    (GATE, "the gate forgets the web workflow", " web lint test build}\"", " lint test build}\""),
+    (GATE, "the gate forgets the lint workflow", " lint test build}\"", " test build}\""),
+    (GATE, "the gate forgets the test workflow", " test build}\"", " build}\""),
+    (GATE, "the gate forgets the build workflow", " test build}\"", " test}\""),
     (GATE, "any JSON is an array", "jq -e 'type == \"array\" and all(.[]; type == \"string\")'", "jq -e 'true'"),
     (GATE, "an array of anything is an array of jobs", "jq -e 'type == \"array\" and all(.[]; type == \"string\")'", "jq -e 'type == \"array\"'"),
     # --- assert-gate.sh: the verdict of a called workflow, and the other levels (ADR-0102)
@@ -232,12 +236,14 @@ MUTANTS = [
     # --- the wiring of the called workflows, and what a stage of the migration changes (ADR-0102)
     (PLAN, "the planner forgets the workflows",
      'WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint"), '
-     '"test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")}', "WORKFLOWS = {}"),
+     '"test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux",)}', "WORKFLOWS = {}"),
     (PLAN, "the planner forgets the documentation workflow", '{"documentation": ("docs",), "security"', '{"security"'),
     (PLAN, "the planner forgets the security workflow", ', "security": ("deny",)', ""),
     (PLAN, "the planner forgets the web workflow", ', "web": ("web",)', ""),
     (PLAN, "the planner forgets the lint workflow", ', "lint": ("deps", "lint")', ""),
-    (PLAN, "the planner forgets the test workflow", ', "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")}', "}"),
+    (PLAN, "the planner forgets the test workflow", ', "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")', ""),
+    (PLAN, "the planner forgets the build workflow", ', "build": ("linux",)', ""),
+    (PLAN, "the planner moves linux to a workflow of another name", '"build": ("linux",)', '"compile": ("linux",)'),
     (PLAN, "the planner moves test's jobs to a workflow of another name", '"test": ("ci-scripts"', '"suite": ("ci-scripts"'),
     (PLAN, "the planner leaves ci-scripts in ci.yml", '("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")',
      '("hermetic", "pg-adapter", "contract", "mutants", "workers")'),
@@ -254,10 +260,11 @@ MUTANTS = [
     (PLAN, "the planner moves deny to a workflow of another name", '"security": ("deny",)', '"supply-chain": ("deny",)'),
     (PLAN, "the planner moves web to a workflow of another name", '"web": ("web",)', '"site": ("web",)'),
     (CI, "the gate judges every planned job and not `top`", "EXPECTED_JOBS: ${{ needs.changes.outputs.top }}", "EXPECTED_JOBS: ${{ needs.changes.outputs.jobs }}"),
-    (CI, "the gate has no VERDICT_JOBS", "          VERDICT_JOBS: documentation security web lint test\n", ""),
-    (CI, "the gate's VERDICT_JOBS names a workflow that is not called", "VERDICT_JOBS: documentation security web lint test",
-     "VERDICT_JOBS: documentation security web lint test contract"),
-    (CI, "the gate's VERDICT_JOBS forgets a called workflow", "VERDICT_JOBS: documentation security web lint test", "VERDICT_JOBS: documentation security web lint"),
+    (CI, "the gate has no VERDICT_JOBS", "          VERDICT_JOBS: documentation security web lint test build\n", ""),
+    (CI, "the gate's VERDICT_JOBS names a workflow that is not called", "VERDICT_JOBS: documentation security web lint test build",
+     "VERDICT_JOBS: documentation security web lint test build contract"),
+    (CI, "the gate's VERDICT_JOBS forgets a called workflow", "VERDICT_JOBS: documentation security web lint test build", "VERDICT_JOBS: documentation security web lint build"),
+    (CI, "the gate's VERDICT_JOBS forgets the build workflow", "VERDICT_JOBS: documentation security web lint test build", "VERDICT_JOBS: documentation security web lint test"),
     (CI, "`changes` does not output the plans", "      plans: ${{ steps.classify.outputs.plans }}\n", ""),
     (CI, "`changes` does not output top", "      top: ${{ steps.classify.outputs.top }}\n", ""),
     # --- the verdict action, which every called workflow's `verdict` job calls (written once, from the second workflow on)
@@ -336,7 +343,26 @@ MUTANTS = [
     (PLAN, "workers is planned when the native server changes", "    if WORKER in hit:\n", "    if WORKER in hit or MUTANTS_BINARY in hit:\n"),
     (PLAN, "a change to the wasm32 tests' scripts plans no workers", '{"jobs": ["workers", "ci-scripts"]}', '{"jobs": ["ci-scripts"]}'),
     (PLAN, "a change to the wasm32 tests' scripts plans no ci-scripts", '{"jobs": ["workers", "ci-scripts"]}', '{"jobs": ["workers"]}'),
-    (PLAN, "the planner does not know the workers job", '"mutants", "workers", "web", "docs")', '"mutants", "web", "docs")'),
+    (PLAN, "the planner does not know the workers job", '"mutants", "workers", "linux", "web", "docs")', '"mutants", "linux", "web", "docs")'),
+    # the linux job (Phase 3, stage 1): the native server and `migrate`, built in release, as a compile proof. Each of these leaves a job that still looks healthy
+    (PLAN, "linux is not planned when the native server changes", '    if any(crate in hit for crate in BUILD_CRATES):\n        jobs.add("linux")\n', ""),
+    (PLAN, "linux is planned for every crate change", "    if any(crate in hit for crate in BUILD_CRATES):\n", "    if changed:\n"),
+    (PLAN, "linux is planned only when the server's own crate changed", "    if any(crate in hit for crate in BUILD_CRATES):\n", "    if any(crate in changed for crate in BUILD_CRATES):\n"),
+    (PLAN, "linux is not planned when only the crate of migrate changed", 'BUILD_CRATES = ("thrust-server", "thrust-adapters-postgres")', 'BUILD_CRATES = ("thrust-server",)'),
+    (PLAN, "linux is not planned when only the server changed", 'BUILD_CRATES = ("thrust-server", "thrust-adapters-postgres")', 'BUILD_CRATES = ("thrust-adapters-postgres",)'),
+    (PLAN, "the planner does not know the linux job", '"mutants", "workers", "linux", "web", "docs")', '"mutants", "workers", "web", "docs")'),
+    (BLD, "linux builds the server in debug", "        run: scripts/rs cargo build --release --locked -p thrust-server\n", "        run: scripts/rs cargo build --locked -p thrust-server\n"),
+    (BLD, "linux builds the server without the lockfile", "        run: scripts/rs cargo build --release --locked -p thrust-server\n", "        run: scripts/rs cargo build --release -p thrust-server\n"),
+    (BLD, "linux builds migrate with another command than the deploy bundle", " -p thrust-adapters-postgres --features native --bin migrate\n", " -p thrust-adapters-postgres --bin migrate\n"),
+    (BLD, "linux builds migrate in debug", "cargo build --release --locked -p thrust-adapters-postgres", "cargo build --locked -p thrust-adapters-postgres"),
+    (BLD, "linux checks for one binary only", "          for bin in thrust-server migrate; do\n", "          for bin in thrust-server; do\n"),
+    (BLD, "linux does not fail when a binary is missing", '"target/release/$bin" || { echo "::error::cargo built nothing at target/release/$bin"; exit 1; }', '"target/release/$bin" || true'),
+    (BLD, "linux shares a cache key with the hermetic job", "          cache-key: build-linux\n", "          cache-key: native-hermetic\n"),
+    (BLD, "linux saves its cache on every ref", "          save-cache: ${{ github.ref == 'refs/heads/main' }}\n", "          save-cache: 'true'\n"),
+    (BLD, "linux uploads nothing and passes", "          if-no-files-found: error\n", "          if-no-files-found: ignore\n"),
+    (BLD, "linux keeps its binaries for ninety days", "          retention-days: 3\n", "          retention-days: 90\n"),
+    (BLD, "linux uploads under another name", "          name: build-linux-x86_64-unknown-linux-gnu\n", "          name: build-linux\n"),
+    (BLD, "linux may ask for an id-token", "    timeout-minutes: 30\n    permissions:\n      contents: read\n", "    timeout-minutes: 30\n    permissions:\n      contents: read\n      id-token: write\n"),
 ]
 MUTANTS += call_mutants()
 
@@ -350,6 +376,7 @@ EQUIVALENT = [
     (WEB, "(equivalent) a comment is added to web.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
     (LNT, "(equivalent) a comment is added to lint.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
     (TST, "(equivalent) a comment is added to test.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
+    (BLD, "(equivalent) a comment is added to build.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
     (ACT, "(equivalent) a comment is added to the verdict action", "runs:\n  using: composite\n", "runs:\n  # a comment\n  using: composite\n"),
     (DEEP, "(equivalent) a comment is added to deep.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
     (TOOLS, "(equivalent) a comment is added to contract-pass-tools", "runs:\n  using: composite\n", "runs:\n  # a comment\n  using: composite\n"),

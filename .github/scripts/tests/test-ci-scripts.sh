@@ -63,8 +63,8 @@ expect "plan: a run line with a changed format fails" 1 "the format changed" pla
 # What ci.yml's gate needs besides `changes`: the workflows it calls, which are all CALLED (ci.yml sets them as VERDICT_JOBS). No job is
 # left in ci.yml, and the gate judges no cells: the cells are the `verdict` job of test.yml's (see the section below). Each migration
 # stage moved a job's name out of this list and its workflow's name in.
-JOBS="documentation security web lint test"
-CALLED="documentation security web lint test"
+JOBS="documentation security web lint test build"
+CALLED="documentation security web lint test build"
 gate() { # gate <dir> <needs-json> <expected-jobs-json>
   d="$T/gate/$1"; mkdir -p "$d"
   ( cd "$d" && NEEDS_JSON="$2" EXPECTED_JOBS="$3" VERDICT_JOBS="$CALLED" "$S/assert-gate.sh" )
@@ -105,12 +105,12 @@ for j in $JOBS; do
   done
 done
 
-ALL='["documentation","security","web","lint","test"]'
+ALL='["documentation","security","web","lint","test","build"]'
 # every job succeeded: "documentation=success security=success ..."
 OKARGS=""
 for j in $JOBS; do OKARGS="$OKARGS $j=success"; done
 ALLOK="$(needs success $OKARGS)"
-expect "gate: everything expected, everything passed" 0 "5 expected jobs passed" gate a1 "$ALLOK" "$ALL"
+expect "gate: everything expected, everything passed" 0 "$(echo $JOBS | wc -w | tr -d ' ') expected jobs passed" gate a1 "$ALLOK" "$ALL"
 # a called workflow must also say pass: its result alone is not the proof (research 0018: a `verdict` job that was skipped leaves it success).
 # Each called workflow is tried on its own, the others in a state that passes, so that the case can only fail because of it.
 noverdict() { printf '%s' "$1" | sed "s/\"$2\":{\"result\":\"success\",\"outputs\":{\"verdict\":\"pass\"}}/\"$2\":{\"result\":\"success\"$3}/"; }

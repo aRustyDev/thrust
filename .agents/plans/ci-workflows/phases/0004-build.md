@@ -148,6 +148,17 @@ asked at stage 2. The native steps of `linux`, `macos` and `windows` are the sam
 
 ## Questions for the owner (planning)
 
+**All four answered on 2026-11-23, as recommended** (the owner chose the recommended option of each; the decisions are in the table below).
+
+| Question | Decision (owner, 2026-11-23) |
+|---|---|
+| 1. What does Build build? | **All six stages, as compile proofs**: each builds its target and uploads a short-lived workflow artifact; nothing is published (Phase 4's). A target that does not compile, or costs more than it shows, is recorded with its numbers and dropped by the owner |
+| 2. Which targets? | **One per stage first**: `x86_64-unknown-linux-gnu` (and `-musl` for the image), `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`, `x86_64-unknown-freebsd`. Other arches and other BSDs only if the owner names them |
+| 3. A Dockerfile? | **Yes, at stage 5**, for `thrust-server` and `migrate`; the design (base image, user, where it lives) is put to the owner then; the image is built and not pushed |
+| 4. The deploy bundle | **Stays** built and attested by `deploy.yml` and `release.yml` through `build-bundle`. Moving it is Phase 4's, with its verifier |
+
+The questions as asked:
+
 1. **What does Build build?** Only what the repository ships (the Workers, `migrate`, the web app, which the bundle already builds), or every target in your tree as a **compile proof**, uploading a short-lived
    workflow artifact and publishing nothing? *Recommended: all six stages as proofs.* `thrust-server` has no release build in CI today and nothing publishes it, so the stages for macOS, Windows, the image and a BSD
    build things that nobody ships yet; the cost is wall clock and cache, not money (the repository is public). A target that does not compile, or costs more than it shows, is recorded with its numbers and dropped

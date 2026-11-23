@@ -307,5 +307,34 @@ if workers_wf:
     check(f"{workers_path}: {WORKERS_JOB} has a cache key of its own, which no other job uses",
           ("          cache-key: wasm-workers\n" in workers_block, (read_text(workers_path) or "").count("cache-key: wasm-workers\n")), (True, 1))
 
+# The linux job (Phase 3, stage 1) is a compile proof: the native server and `migrate`, built in release, and uploaded. Five things about it can be wrong and leave the job green:
+# a build that is not the release profile (the debug build of the cells already exists, and a release-only break would pass), an unlocked build (it would read a lockfile
+# it is free to change), a `migrate` built by another command than the deploy bundle's (the proof would say nothing about the binary that ships), a check for the binaries
+# that looks for one only (a build that made no `migrate` would pass), and a cache key shared with another job (a release profile saved under it evicts that job's
+# entries). Each is a line, checked as text, and the mutant driver changes each.
+LINUX_JOB = "linux"
+linux_wf = next((w for w, jobs in pc.WORKFLOWS.items() if LINUX_JOB in jobs), None)
+check(f"the job {LINUX_JOB} is a job of a called workflow", linux_wf is not None, True)
+if linux_wf:
+    linux_path = f".github/workflows/{linux_wf}.yml"
+    linux_text = read_text(linux_path) or ""
+    linux_block = block(linux_text, LINUX_JOB)
+    check(f"{linux_path}: {LINUX_JOB} builds the server in release, locked",
+          "        run: scripts/rs cargo build --release --locked -p thrust-server\n" in linux_block, True)
+    migrate_cmd = "run: scripts/rs cargo build --release --locked -p thrust-adapters-postgres --features native --bin migrate\n"
+    check(f"{linux_path}: {LINUX_JOB} builds migrate with the command the deploy bundle builds it with",
+          (migrate_cmd in linux_block, migrate_cmd in (read_text(".github/actions/build-bundle/action.yml") or "")), (True, True))
+    check(f"{linux_path}: {LINUX_JOB} builds nothing but in release (no cargo build line without --release)",
+          [l for l in linux_block.splitlines() if re.search(r"run: .*cargo build", l) and "--release" not in l], [])
+    check(f"{linux_path}: {LINUX_JOB} checks for each of the two binaries it built, and fails when one is missing",
+          '          for bin in thrust-server migrate; do\n            test -x "target/release/$bin" || ' in linux_block and "exit 1; }\n" in linux_block, True)
+    all_text = "".join(read_text(f".github/workflows/{f}") or "" for f in sorted(os.listdir(os.path.join(ROOT, ".github", "workflows"))) if f.endswith(".yml"))
+    check(f"{linux_path}: {LINUX_JOB} has a cache key of its own, saved on main only, which no other job uses",
+          ("          cache-key: build-linux\n          save-cache: ${{ github.ref == 'refs/heads/main' }}\n" in linux_block, all_text.count("cache-key: build-linux\n")), (True, 1))
+    check(f"{linux_path}: {LINUX_JOB} uploads the binaries, fails when there are none, and keeps them three days",
+          "          name: build-linux-x86_64-unknown-linux-gnu\n" in linux_block and "          if-no-files-found: error\n          retention-days: 3\n" in linux_block, True)
+    check(f"{linux_path}: {LINUX_JOB} has no secret, no environment and no id-token: a compile proof publishes and attests nothing",
+          [l for l in linux_text.splitlines() if re.search(r"secrets\.|environment:|id-token|attestations|contents: write", l) and not l.strip().startswith("#")], [])
+
 print(f"passed={passed} bad={failed}")
 sys.exit(1 if failed else 0)

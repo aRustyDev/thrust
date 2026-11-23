@@ -24,6 +24,7 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 | `.github/workflows/web.yml` (`web`) | The stock app's build check, called by `ci.yml` (its `web` job, which keeps the id the job always had) and runnable alone: the `web` job (moved here unchanged) and a `verdict` job that judges it against the plan it was given. `ci.yml`'s `gate` waits for the calling job and requires the `verdict` output. The workflow and its job share a name, so the checks are `web / web` and `web / verdict` |
 | `.github/workflows/lint.yml` (`lint`) | The repository's guards and the Rust lint, called by `ci.yml` (its `lint` job, which keeps the id the job always had) and runnable alone: the `deps` and `lint` jobs (moved here unchanged) and a `verdict` job that judges them against the plan it was given, which may name one of the two or both. `ci.yml`'s `gate` waits for the calling job and requires the `verdict` output. The workflow and one of its jobs share a name, so the checks are `lint / deps`, `lint / lint` and `lint / verdict`. `deps` runs the guards of these files too, `lint.yml` among them |
 | `.github/workflows/test.yml` (`test`) | The repository's tests, called by `ci.yml` (its `test` job) and runnable alone: the jobs `ci-scripts` (the CI's own scripts: the planner, the gate, the lint, the mutant driver, the deploy and release helpers; its 47 commands run a core at a time under GNU parallel, the slowest first, and every one runs even when another fails), `hermetic` (the nextest loop, the contract counts, the doctests, the OpenAPI tests), `pg-adapter` (the Postgres and SMTP adapters against containers), `contract` (the contract cells: one call of `contract-cell.yml` per cell of the matrix `ci.yml` gives it) and `mutants` (the mutation controls: a matrix of four runners that each run their share of the 66 rows, because the rows cannot share a checkout; the id is unchanged, so the job's result is the four legs' aggregate) and `workers` (the Worker's wasm32 unit tests, [status](../testing/status.md) G-6: nextest on Node through `wasm-bindgen-test-runner`, which the job installs at the version `Cargo.lock` pins; new in stage 8 of the Test phase, the first five were moved here unchanged but for the mutants matrix), and a `verdict` job that judges them against the plan it was given, which may name any of the six or all, and that collects the cells' pass markers and proves that each planned cell reported. `ci.yml`'s `gate` waits for the calling job and requires the `verdict` output; it judges no cells itself. `ci.yml` calls it with the planner's `plan`, `matrix` and `cells`, and the cell calls are three levels deep (`ci.yml` to `test.yml` to `contract-cell.yml`) |
+| `.github/workflows/build.yml` (`build`) | What the repository builds, called by `ci.yml` (its `build` job) and runnable alone (Phase 3 of `.agents/plans/ci-workflows/`, `phases/0004-build.md`): each job is a **compile proof** for one target, uploads what it built as a workflow artifact for three days, and publishes, signs and attests nothing (no secret, environment or `id-token`). Today the job `linux` builds `thrust-server` and `migrate` in release for `x86_64-unknown-linux-gnu`, and a `verdict` job judges it against the plan it was given. The deploy bundle is not built here: `deploy.yml` and `release.yml` build it with the action `build-bundle` and attest it, and `verify-bundle.sh` requires those two files as its signers |
 | `.github/workflows/flake-hunt.yml` | Repeats one cell 1 to 50 times (5 by default), by hand or every Monday at 03:17 UTC (`native-memory main`). It offers every pass of the matrix, and its first step, `.github/scripts/check-flake-hunt-cell.sh`, refuses a target and pass that are not a cell of `scripts/contract-all.sh`, before anything is built; `test-check-flake-hunt-cell.sh` holds the workflow's two lists equal to the matrix's. A pass is prepared by the same action a cell uses (`contract-pass-tools`). It passes only if `scripts/flake-hunt.sh` prints `failures: 0 / N`, because the script ends with an `echo`, so its exit status does not say whether an iteration failed. The job stops at 120 minutes: a `worker-cf e2e` iteration takes about 9 (nightly run 43798891735), so that cell fits about 12 |
 | `.github/workflows/deep.yml` | The randomized tests (`prop_` and `model_`) at 4096 cases, every night at 05:37 UTC, by hand, and on a pull request that edits the file (so that it is proved before it merges): the `deep` nextest profile, less the `oracle_` tests, which need the TypeScript oracle's generated output and so run by hand. A job of 6.5 to 11 minutes in the four runs measured. **Not gated**: `ci.yml` does not call it, `gate` does not read it and a red run blocks nothing (Test phase, stage 3; the owner's decision of 2026-11-19, status G-48). It is red at random while issue #114 is open; any other red test is a finding |
 | `.github/workflows/e2e.yml` | (Named `e2e-schedule.yml` until the last stage of the migration to one workflow per concern; the records of its earlier runs, in `testing/status.md` G-31, use that name.) Runs the `worker-cf e2e` and `worker-cf e2e-mail` cells (through `contract-cell.yml`, one job each) every day at 04:41 UTC and by hand, and on a pull request that edits the file, so that the call is proved valid before it merges. It covers what a pull request does not: drift in the runner, the browser and the packages, every day on `main`. Not a gate: nothing waits for it and `gate` does not read it. The pinned-Plane leg is not here, because the oracle builds from an unpushed fork (`scripts/e2e.sh plane-oracle`, local) |
@@ -68,7 +69,7 @@ decides:
   `.github/scripts/plan-ci.py` (see [What runs when](#what-runs-when)).
 - Every expected job must be exactly `success`. A skipped job is a failure here, not a pass.
 - Every job that is not expected must be `skipped`. One that ran anyway means its `if:` and the planner disagree.
-- The planner and the gate list the same five names: the workflows `ci.yml` calls. An expected job
+- The planner and the gate list the same six names: the workflows `ci.yml` calls. An expected job
   that is not a need of the gate, or a need the planner does not know, fails it, as does an input that is missing or is not
   a JSON array of strings.
 - **The contract cells are judged by `test`'s own `verdict` job, not by the gate** (they were the gate's until the job
@@ -76,7 +77,7 @@ decides:
   pass marker must then equal the planned set, which must not be empty. The `verdict` action downloads the markers (the
   artifacts `cell-ok-*` of the same run, across the nested call) when it is given a cell job, and tolerates a failed download:
   with no marker the judge fails on `no cell markers`, so it cannot pass.
-- `test-ci-scripts.sh` generates the cases: each of the five names, expected or not, with each of the four results (40
+- `test-ci-scripts.sh` generates the cases: each of the six names, expected or not, with each of the four results (48
   cases), then the inputs and the names; and, at the level of a verdict job whose cell job is `contract`, each of the six jobs of
   `test.yml` the same way, and the cells' cases (a planned cell that never reports, a marker for an unplanned cell, no cell
   planned, no marker, cells planned and the cell job not expected, the inputs only a workflow with cells has).
@@ -89,12 +90,12 @@ decides:
   expected one that its result is `success` **and** that its output `verdict` is `pass`, since a workflow whose `verdict` job
   was skipped is `success` and proves nothing. `VERDICT_JOBS` is a static list in `ci.yml`, not the planner's output, so a
   planner that dropped a workflow could not switch its check off; `test_workflow_wiring.py` holds it equal to the planner's
-  `WORKFLOWS`. Today five workflows are called, `documentation.yml` (the `docs` job), `security.yml` (the `deny` job),
-  `web.yml` (the `web` job), `lint.yml` (the `deps` and `lint` jobs) and `test.yml` (the `ci-scripts`, `hermetic`, `pg-adapter`, `contract`,
-  `mutants` and `workers` jobs), so a plan may name only some of a workflow's jobs: `clippy.toml` plans `lint` alone, a guard of `deps` plans `deps`
-  alone, a deploy script plans `ci-scripts` alone, and `e2e/` plans `contract` alone. The cases (209 in `test-ci-scripts.sh`) include the seven scenarios of the gate spike
+  `WORKFLOWS`. Today six workflows are called, `documentation.yml` (the `docs` job), `security.yml` (the `deny` job),
+  `web.yml` (the `web` job), `lint.yml` (the `deps` and `lint` jobs), `test.yml` (the `ci-scripts`, `hermetic`, `pg-adapter`, `contract`,
+  `mutants` and `workers` jobs) and `build.yml` (the `linux` job), so a plan may name only some of a workflow's jobs: `clippy.toml` plans `lint` alone, a guard of `deps` plans `deps`
+  alone, a deploy script plans `ci-scripts` alone, and `e2e/` plans `contract` alone. The cases (221 in `test-ci-scripts.sh`) include the seven scenarios of the gate spike
   (`.agents/plans/ci-workflows/research/0018-gate-spike.md`), each called workflow tried on its own.
-- **The wiring is tested against the real files.** `test_workflow_wiring.py` (142 checks, for five workflows) holds `ci.yml`, the
+- **The wiring is tested against the real files.** `test_workflow_wiring.py` (196 checks, for six workflows) holds `ci.yml`, the
   planner and each called workflow's file to each other: the calling job (`needs: changes`, it runs when `top` names it, it
   passes its own plan from `plans`), the gate's needs and its `VERDICT_JOBS`, the workflow's jobs and its `verdict` job
   (`always()`, checking out and calling the `verdict` action with its needs, its plan and its jobs, and running nothing of
@@ -103,14 +104,14 @@ decides:
   judge reads) and its output, set only after the judge. The workflow that holds `contract` is checked for the matrix and the cells it
   is given, its call of `contract-cell.yml`, and the cell job and cells it passes to the action; `ci.yml` for passing them, and its
   gate for judging no cells; and `ci.yml` for holding only `changes`, the calls and `gate`.
-- **Tested to be able to fail.** `.github/scripts/tests/mutate_gate.py`, one of the commands of the `ci-scripts` job, plants 234 hand
+- **Tested to be able to fail.** `.github/scripts/tests/mutate_gate.py`, one of the commands of the `ci-scripts` job, plants 313 hand
   mutants one at a time in `plan-ci.py`, `assert-gate.sh`, `ci.yml`, the called workflows and the `verdict` action, and each
   must fail the tests of its file (`test_plan_ci.py` and `test_workflow_wiring.py`; `test-ci-scripts.sh` under dash, stopping
   at the first failing case). The mutants of a called workflow are written once and made for each of them (and for each of its jobs, a workflow of several
   jobs getting the mutants only several can have). It
   refuses to answer when the tests fail on the unmutated files, when the text a mutant replaces is not found exactly once, or
-  when a mutant no longer compiles, and nine mutants that change nothing must survive, so a driver that kills everything is
-  caught. `[verified 2026-11-17 locally, under dash]`
+  when a mutant no longer compiles, and twelve mutants that change nothing must survive, so a driver that kills everything is
+  caught. `[verified 2026-11-23 locally, under dash: 313 killed, 12 survive]`
 
 The point is that "nothing failed" is not accepted as "everything ran". A cell that never started leaves no check
 behind, and a required check that never reports blocks a pull request forever.
@@ -130,7 +131,8 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
     `thrust-adapters-selfhosted` is affected. `mutants`, which mutates the native server, runs when `thrust-server` is
     affected or the suite changed. `workers`, the Worker's wasm32 unit tests, runs when `thrust-worker` is affected,
     and `scripts/wasm-tests.sh`, `scripts/wasm-test-runner.sh` and `scripts/lib/workerd-stubs.cjs` run it with
-    `ci-scripts`.
+    `ci-scripts`. `linux`, the release build of the native server and of `migrate` (in `build.yml`), runs when
+    `thrust-server` or `thrust-adapters-postgres` is affected.
   - Some files outside the crates are read by the crates' tests, which Cargo's graph cannot see, so they run those tests'
     jobs:
     - `tools/oracle-v1/` (its schema and corpus are read by the tests of four crates) runs `hermetic`, `deps` (the
@@ -149,7 +151,7 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   - Everything runs on a path whose readers the planner does not know:
     - the workspace manifest, the lockfile and the toolchain;
     - `.cargo/` and `.config/`;
-    - `ci.yml`, `contract-cell.yml`, the called workflows (`documentation.yml`, `security.yml`, `web.yml`, `lint.yml`, `test.yml`), `setup-rust`,
+    - `ci.yml`, `contract-cell.yml`, the called workflows (`documentation.yml`, `security.yml`, `web.yml`, `lint.yml`, `test.yml`, `build.yml`), `setup-rust`,
       `contract-pass-tools` and `verdict`;
     - the planner and the gate;
     - the scripts that run a cell;
@@ -169,14 +171,15 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
 
   A target of `contract-all.sh` that the planner does not know runs on every change. `deploy.yml` ignores the nightly
   run: `plan-deploy.sh` deploys only after a pull request or a push.
-- **Examples** (the planner run on this repository) `[verified 2026-11-20 locally]`:
+- **Examples** (the planner run on this repository) `[verified 2026-11-23 locally]`:
 
   | Change | Jobs | Cells |
   |---|---|---|
   | a file under `web/` | `web`, `contract` | 2 (`worker-cf e2e`, `worker-cf e2e-mail`) |
   | `thrust-adapters-cloudflare` | `ci-scripts`, `deps`, `lint`, `hermetic`, `pg-adapter`, `contract`, `workers` | the 16 `worker-*` cells |
   | `crates/worker/src/lib.rs` | `ci-scripts`, `deps`, `lint`, `hermetic`, `contract`, `workers` (its `Cargo.toml` adds `deny`) | the 16 `worker-*` cells |
-  | `crates/adapters/selfhosted/Cargo.toml` | `ci-scripts`, `deps`, `lint`, `deny`, `hermetic`, `pg-adapter`, `contract`, `mutants` | the 10 `native-*` cells |
+  | `crates/adapters/selfhosted/Cargo.toml` | `ci-scripts`, `deps`, `lint`, `deny`, `hermetic`, `pg-adapter`, `contract`, `mutants`, `linux` | the 10 `native-*` cells |
+  | `crates/server/src/lib.rs` | `ci-scripts`, `deps`, `lint`, `hermetic`, `contract`, `mutants`, `linux` | the 10 `native-*` cells |
   | `thrust-contracts` (everything depends on it) | all but `deny`, `web` and `docs` | all 26 |
   | `tools/oracle-v1/` | `deps`, `hermetic`, `contract` | the 3 `oracle` cells |
   | `scripts/wasm-tests.sh` (or the runner and stand-ins beside it) | `ci-scripts`, `workers` | none |

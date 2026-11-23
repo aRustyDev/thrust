@@ -170,10 +170,22 @@ jobs:
     permissions:
       contents: read
 
+  # What the repository builds (Phase 3 of the CI split): build.yml, called here and judged by its own `verdict` job (ADR-0102), like the
+  # book's and the supply chain's. `top` says whether the change needs it, and `plans` gives it the jobs to run. Each job is a compile proof
+  # for one target and publishes nothing. The deploy bundle is not built here (deploy.yml and release.yml build it and sign it).
+  build:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.top || '[]'), 'build')
+    uses: ./.github/workflows/build.yml
+    with:
+      plan: ${{ toJSON(fromJSON(needs.changes.outputs.plans || '{}').build) }}
+    permissions:
+      contents: read
+
   gate:
     name: gate
     if: always()
-    needs: [changes, test, lint, web, documentation, security]
+    needs: [changes, test, lint, web, documentation, security, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -190,5 +202,5 @@ jobs:
           EXPECTED_JOBS: ${{ needs.changes.outputs.top }}
           # the called workflows. A STATIC list, not the planner's `workflows` output: a planner bug that left one out of that output
           # would switch off the check for it. test_plan_ci.py holds this list equal to the keys of the planner's WORKFLOWS.
-          VERDICT_JOBS: documentation security web lint test
+          VERDICT_JOBS: documentation security web lint test build
         run: .github/scripts/assert-gate.sh
