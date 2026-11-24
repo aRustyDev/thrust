@@ -53,6 +53,10 @@ so a Preview update cannot replace `thrust-pg` or `thrust-pg-dev`. Each key must
 `thrust-preview-pr-<number>-<fingerprint-prefix>` cluster name and its host must be exactly that
 cluster's `-rw` service in `TF_VAR_preview_namespace` (default `thrust-preview`). Terraform rejects
 a replica, another Preview's hostname, or a noncanonical name before the Cloudflare API is called.
+`infra/preview/scripts/render-preview-vpc-services.py` is the read-only renderer for that value:
+it accepts only bounded, recomputed canonical `provisioning`/`ready` lease documents, omits
+`deleting` leases, and fails rather than interpreting malformed or duplicate input as an empty map.
+It does not run OpenTofu; a protected controller must review and apply its output separately.
 
 The `preview-control-plane` environment holds the independent runtime credentials: variable
 `CLOUDFLARE_ACCOUNT_ID` and `THRUST_PREVIEW_PROVISIONER_URL`, and secrets `HYPERDRIVE_API_TOKEN`,

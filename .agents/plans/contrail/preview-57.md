@@ -75,6 +75,9 @@ Actions and the Cloudflare Worker stay without Kubernetes credentials.
    The Cloudflare root now accepts an additive, protected `preview_vpc_services` map and validates
    every Preview service name and exact `-rw` hostname; the controller/reconciler still needs to
    materialize the active lease set into that input and consume the resulting service IDs.
+   `render-preview-vpc-services.py` now materializes the map deterministically from bounded,
+   recomputed provisioning/ready lease documents while omitting deleting leases; it is read-only
+   and refuses malformed or duplicate ownership rather than rendering an empty desired state.
    `hyperdrive.sh ensure-preview-cluster`, `verify-preview-cluster` and
    `drop-preview-cluster` now provide the corresponding dedicated-origin lifecycle: they reject
    the shared development service, bind the matching `pr_<n>` login, verify a non-secret
