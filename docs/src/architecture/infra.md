@@ -180,7 +180,7 @@ logs the cause.
 
 ### The image of the server
 
-`docker/Dockerfile` builds `thrust-server` and `migrate` into one image of about 20 MB. Build it from the repository root:
+`docker/Dockerfile` builds `thrust-server` and `migrate` into one image of 15.4 MB (`docker image ls`, on a hosted runner). Build it from the repository root:
 
 ```sh
 docker build -f docker/Dockerfile -t thrust-server .
@@ -188,7 +188,7 @@ docker run --rm -p 8080:8080 thrust-server                         # the memory 
 docker run --rm -e DATABASE_URL --entrypoint /usr/local/bin/migrate thrust-server
 ```
 
-What it is, and why `[verified 2026-11-23 locally, linux/amd64 under emulation: built from `main` at c457ce3b, then run]`:
+What it is, and why `[verified 2026-11-23 locally, linux/amd64 under emulation: built from `main` at c457ce3b, then run; and on a hosted runner, runs 45316703451 and 45317433023]`:
 
 - **Static, on musl, with nothing under it.** The builder is `rust:alpine3.24`, whose own target is `x86_64-unknown-linux-musl`, so the binaries are
   `static-pie` and the runtime is `gcr.io/distroless/static-debian13:nonroot` (a CA bundle and the `nonroot` user, no libc, no shell). The server's TLS is
@@ -209,8 +209,8 @@ What it is, and why `[verified 2026-11-23 locally, linux/amd64 under emulation: 
 
 What it does not do. It is **not published** anywhere (the Release phase of the CI plan decides what is). It is **not measured under load**: musl's default
 allocator is reported to be slower than glibc's under multi-threaded load (public posts say 25% to several times) and its DNS resolver differs, and nothing
-here tested either for this server; the fix would be a global allocator in `thrust-server`, or a glibc image (`distroless/cc`: the two cargo builds took 222 s
-against 296 s on musl, and the image is about 45 MB against 20 MB, in the same emulated measurement). CI builds it and starts it once, nightly and for a release candidate, in the job `docker` of
+here tested either for this server; the fix would be a global allocator in `thrust-server`, or a glibc image (`distroless/cc`: on a hosted runner, cold, the job took 149 s (one run) against 219 to 324 s on musl (four runs), the two cargo builds 115 s against 213 s and 307 s (the two musl runs that were read),
+and the image is 40.5 MB against 15.4 MB). CI builds it and starts it once, nightly and for a release candidate, in the job `docker` of
 `build-extended.yml` ([CI/CD](cicd.md)); that job is not a required check.
 
 ## Postgres
