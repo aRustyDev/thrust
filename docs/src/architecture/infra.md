@@ -209,7 +209,7 @@ What it is, and why `[verified 2026-11-23 locally, linux/amd64 under emulation: 
 
 What it does not do. It is **not published** anywhere (the Release phase of the CI plan decides what is). It is **not measured under load**: musl's default
 allocator is reported to be slower than glibc's under multi-threaded load (public posts say 25% to several times) and its DNS resolver differs, and nothing
-here tested either for this server; the fix would be a global allocator in `thrust-server`, or a glibc image (`distroless/cc`: on a hosted runner, cold, the job took 149 s (one run) against 236 s and 324 s on musl (two), the two cargo builds 115 s against 213 s and 307 s,
+here tested either for this server; the fix would be a global allocator in `thrust-server`, or a glibc image (`distroless/cc`: on a hosted runner, cold, the job took 149 s (one run) against 219 to 324 s on musl (four runs), the two cargo builds 115 s against 213 s and 307 s (the two musl runs that were read),
 and the image is 40.5 MB against 15.4 MB). CI builds it and starts it once, nightly and for a release candidate, in the job `docker` of
 `build-extended.yml` ([CI/CD](cicd.md)); that job is not a required check.
 
