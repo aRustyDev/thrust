@@ -131,7 +131,7 @@ others follow; the one with a measured saving second; the probes, which cost not
 | 3 | macos | `macos` (in `build-extended.yml`: **not a required check**, by the owner's decision of 2026-11-23) | nothing | the probe: does the server build on `aarch64-apple-darwin`, how long, what artifact; whether a cache fits the budget | **passes 1 to 7 done** (#365 and #367, merged 2026-11-23, and this record; [below](#stage-3-in-detail-macos)): it builds, first try, in 234 s cold (the server 173 s) and **134 s with the cache** (-46% against the dispatch that saved it); its cache was never saved until #367 fixed the layout (the action called `setup-rust`, two composites deep) |
 | 4 | windows | `windows` (in `build-extended.yml`, **not a required check**: my assumption, on the owner's reasoning for macOS, asked in #367) | nothing | the probe: does `ring` build on `x86_64-pc-windows-msvc`; the shell the steps run in (bash is on the runner) | **passes 1 to 7 done** (#367, merged 2026-11-23, and this record; [below](#stage-4-in-detail-windows)): it builds, first try, in 219 to 290 s cold (the server 136 to 203 s) and **133 s with the cache** (-39%); the stage also found why no native cache was saved |
 | 5 | docker | `docker` | nothing: no Dockerfile | question 3; an image built from a Dockerfile of the repository's, **not pushed** | not started |
-| 6 | bsd | `bsd` | nothing | question 2; a VM on a hosted runner or a cross toolchain: a survey of public solutions comes first; the stage is dropped if neither is worth its time | not started |
+| 6 | bsd | `bsd` (in `build-extended.yml`, **not a required check**: the owner agreed) | nothing | question 2; a VM on a hosted runner or a cross toolchain: a survey of public solutions comes first; the stage is dropped if neither is worth its time | **passes 1 to 7 done** (#381, [below](#stage-6-in-detail-bsd)): a FreeBSD 14.5 VM by `cross-platform-actions/action`, KVM, four CPUs: it builds first try, `ring` included, in **236 s** and writes no cache; the other VM action took 264 to 450 s and wrote a 1.0 GB cache entry; the owner chose the first and the release |
 
 Each stage's section (purpose, acceptance, state machine, steps, a survey of public solutions, custom code and its probe, the pass log) is written **when the stage starts**, not before.
 
@@ -389,6 +389,94 @@ It is a regression of #365, which moved `linux`'s steps into the action "with it
 | 5 Caching | #367, measured on `main` after the merge | the finding above, the probe and the fix, and **the save read on `main`**: `windows` saved 252,089,035 bytes (19.5 s), restores it in 12.9 s and **ran in 133 s against 219 s** for the dispatch that saved it (-39%, or -33% without that run's 19 s save), the server 136 s to 77 s and `migrate` 29.4 s to 15.8 s; `macos` is in stage 3's row. `linux`, in `main`'s `ci` run `45125725107` with its cache: 104 s (the server 57 s, `migrate` 14.7 s), as stage 1 measured (101 to 102 s). The two new caches add 0.47 GB to a repository that is over its cache limit (`linux`'s was already there); see stage 3 for what that evicts |
 | 6, 7 | #367 | as for `macos`: one job on no critical path and not in the gate, so nothing to parallelise, and nothing to minimise beyond the cache (pass 5) |
 
+### Stage 6 in detail: `bsd`
+
+**Purpose and use cases.** `bsd` proves that the native server and the migration binary still build in **release** for `x86_64-unknown-freebsd`, on a real FreeBSD, and keeps nothing. It is the only thing in CI that runs on a BSD, so a break that only that target sees (an API Linux has and FreeBSD has not, a C dependency whose build script does not know FreeBSD) would otherwise be found by the first person to try. It runs on the triggers of the other extended jobs, in their workflow.
+
+**Placement.** `build-extended.yml`, outside the gate: the owner agreed that Windows, BSD and docker belong there (2026-11-23).
+
+**The owner's choices (2026-11-24),** put with both VM actions built and run: **keep the stage**, with **`cross-platform-actions/action`**, on **FreeBSD 14.5**. Both were my recommendations.
+
+**What the pages said** (read 2026-11-23/24; a reader agent quoted them, and I read the supported-releases page myself):
+- `x86_64-unknown-freebsd` is **Tier 2 with host tools**, and "may be installed with rustup" ([the FreeBSD page](https://doc.rust-lang.org/rustc/platform-support/freebsd.html), [the platform-support table](https://doc.rust-lang.org/rustc/platform-support.html)). Tier 2 is "guaranteed to build"; "Automated tests are not always run so it's not guaranteed to produce a working build". The release matrix on the FreeBSD page is "as of Rust 1.82.0", and "We commit that rustc will run on all currently supported releases of FreeBSD". So a build is what can be proved, not that the tests pass.
+- The supported FreeBSD releases ([freebsd.org/security](https://www.freebsd.org/security/), read 2026-11-23): **15.1** (end of life 2027-03-31), **14.5** (2027-06-30), **14.4** (2026-12-31); `stable/14` to 2028-11-30, `stable/15` to 2029-12-31. A binary built on a release generally runs on it and on newer ones, so the **oldest release that stays supported** is the one the proof speaks for: 14.5, since 14.4 ends in five weeks.
+- OpenBSD is Tier 3 (no prebuilt standard library) and the owner named FreeBSD only (question 2).
+
+**Survey of public solutions.**
+
+| Candidate | Read from | Fit | Decision |
+|---|---|---|---|
+| `cross-platform-actions/action` v1.8.0 (2026-11-19) | its README (the reader's report); **built and run** | QEMU, uses KVM when the runner has it (the hosted runner has `/dev/kvm`); its own images and hypervisor, downloaded in under a second; `sync_files`; commands run in the VM through the shell `cpa.sh {0}` (its `run` input is deprecated) | **chosen** (the owner) |
+| `vmactions/freebsd-vm` v1.6.0 (2026-11-09) | its README; **built and run** | the same result; apt-installs QEMU on the runner as root; caches the extracted VM image (1.0 GB) and the apt packages (23.5 MB) per ref | rejected: 264 to 450 s, and the cache entry in a repository over its limit |
+| `cross` with its FreeBSD image | its README (build only: the table's test column is blank; the FreeBSD release in the image is not stated); the releases API | a cross link, not a native toolchain | not tried: its latest release is `v0.2.5` of 2023-02-04, so there is nothing recent to pin |
+| A hand-made sysroot with clang (what Rust's own CI does) | [`freebsd-toolchain.sh`](https://github.com/rust-lang/rust/blob/master/src/ci/docker/scripts/freebsd-toolchain.sh): FreeBSD 14.4's `base.txz`, binutils 2.40 built from source, clang wrappers; its own comment says the binutils set the ELF OS/ABI to SysV | a cross link; more hand-written code than the VM, and less is proved | not tried |
+| `cargo-zigbuild` | search results (no FreeBSD source found) | not known to cover FreeBSD | not tried |
+| `rustup` in the VM | **run** | installs the compiler `rust-toolchain.toml` pins, 9 s | used |
+
+**What was measured, on a hosted runner, for both VM actions** (cold: `vmactions` was run once with no cache of its own and once with the caches the first run had written) (the pull request that added the job, #381: runs `45319311424` and `45320359732`; both on FreeBSD 14.5, 4 CPUs, KVM; **the binaries have the same sizes**, 10,166,504 and 2,560,800 bytes, `ELF 64-bit LSB pie executable, x86-64, … (FreeBSD), dynamically linked, interpreter /libexec/ld-elf.so.1, for FreeBSD 14.5`):
+
+| | `cross-platform-actions/action` | `vmactions/freebsd-vm` |
+|---|---|---|
+| the job | **236 s** (the first run failed in 31 s at `pkg`, for want of `sudo`, so this is one timing) | **450 s** with no caches, **264 s** with them |
+| before the VM runs | VM setup 18.9 s in all, the VM ready in 12 s | `apt-get install` of QEMU **239 s** the first time (single small packages took 15 to 24 s from the mirror), then the image to a running VM in 22 s; with the caches, the apt packages restored and installed in 39 s, the image restored in 19 s and the VM running 13 s later |
+| `pkg install curl`, rustup, the pinned toolchain | 10 s, 9 s | 8 s, 8 to 9 s |
+| the server's release build in the VM | **150 s** | 126 s and 132 s |
+| `migrate`'s | 38 s | 32.5 s and 30.7 s |
+| repository cache written | none | `freebsd-14.5-2.2.9-amd64-v3`, **1,000,257,868 bytes**, and `apt-pkgs-…`, 23,507,433 bytes, on the pull request's ref; the repository then held 11.29 GB in 29 entries, against its 10 GB limit. Restoring the image took 19.3 s (`cache.restoreCache() took 19303ms`), where downloading and extracting it took 9 s (1.7 s and 7.2 s). Both entries were deleted after the probe |
+| VM user | `runner` (needs `sudo pkg`) | root |
+
+The native Linux build of the server is 86.5 s on four vCPUs, so the compile in the VM is about 1.5 to 1.7 times that. **KVM works**: a VM under software emulation would be many times slower.
+
+**Acceptance.**
+1. It builds the server and `migrate` in release for `x86_64-unknown-freebsd` on FreeBSD 14.5, in a VM, with the compiler `rust-toolchain.toml` pins. Shown: run `45320359732` (236 s, green); `ring` builds.
+2. It fails when the VM is not the target and when a binary is missing, shown by controls: the job's own two checks, taken from the workflow and run under dash, with a stand-in `rustc` and a temporary target directory: the host `x86_64-unknown-freebsd` passes, and `x86_64-unknown-linux-gnu`, `aarch64-unknown-freebsd` and an empty answer fail with the message; both binaries present pass; each one missing, both missing, and both present but not executable fail (9 cases).
+3. It is not in the gate: not called by `ci.yml`, not a job of the planner; the wiring test and the mutants hold that.
+4. It publishes, signs, attests and uploads nothing, and holds no secret, environment or `id-token`; its only third-party action is pinned by commit.
+5. It runs on its triggers: the pull-request path trigger on the pull request that adds it (green, twice); the night and the release-candidate push cannot run before the merge.
+6. It is documented: the job's comment, `cicd.md`, `running.md` (a row and a runbook, "When `bsd` is red"), the workflows index.
+
+**Steps** (`build-extended.yml`, job `bsd`, `ubuntu-24.04`, 45 minutes): checkout; the action starts the VM (`operating_system: freebsd`, `version: '14.5'`, `architecture: x86-64`, `cpu_count: 4`, `shell: sh`, `sync_files: runner-to-vm`: the repository goes in and nothing comes back); then one step in the VM (`shell: cpa.sh {0}`): `sudo pkg install -y curl`, rustup with no default toolchain, `rustup toolchain install --profile minimal --no-self-update` (which reads `rust-toolchain.toml`), the check that the VM's Rust host is the target, the two cargo commands of `build-native` with the target directory at `/tmp/thrust-target` (in the VM, outside the synced workspace), the check that both binaries exist and can be run, and a `file` line. It prints a timing for each phase.
+
+**What it costs** (run `45320359732`, job `138197149281`; cold) [re-run: the job's log, `gh api .../jobs/<id>/logs`]:
+
+| Step | Seconds | Note |
+|---|---|---|
+| set up, checkout | 5 | |
+| the VM: download, boot, sync | 19 | "The VM became ready after 12.21 seconds and 5 attempt(s)" |
+| `sudo pkg install -y curl` | 10 | |
+| rustup, the pinned toolchain | 9 | `rustc 1.100.0`, host `x86_64-unknown-freebsd` |
+| `cargo build --release --locked -p thrust-server` | **150** | cargo: "Finished `release` profile in 2m 30s" |
+| `cargo build --release … --bin migrate` | 38 | "in 38.08s" |
+| teardown, end of job | 5 | |
+| **the job** | **236** | `docker` in the same run: 207 s |
+
+What it shows:
+- **It builds, first try, and nothing in the build had to change for FreeBSD.** `ring` (C and assembly) built, and the server's signal handling (`tokio::signal::ctrl_c`) is portable. The binary is a FreeBSD ELF for 14.5.
+- **A VM on the hosted runner is fast enough**: four minutes in all, about what `docker` costs, off every critical path and not in the gate.
+- **The two actions differ in what they do around the VM, not in what they build**: one downloads a small hypervisor and an image in seconds; the other installs QEMU from apt as root and writes a 1.0 GB cache entry, in a repository that is over its cache limit.
+
+**Findings of this stage.**
+1. **The VM user is not root.** The first run of `cross-platform-actions/action` failed in 31 s at `pkg: Insufficient privileges to install packages`; `pkg` runs under `sudo` (the action's own setup does the same). The same log showed that its `run` input is deprecated, so the job uses the supported `cpa.sh {0}` shell from the start.
+2. **A third-party VM action has costs its README does not say.** The cache entry (1.0 GB per ref, and a restore slower than a fresh download) and the apt install of QEMU only showed in the runs; neither README stated them. Read the caches API after a probe run of any action that says "cache".
+3. **The release is a calendar item.** FreeBSD 14.5 reaches end of life on 2027-06-30; the job's `version` has to move to a 15.x release before the package mirror drops 14.5, and the oldest-supported rule says which.
+
+**Custom code, and why it has no built-in.** The build is `cargo build`, the VM is the action's, and the toolchain is rustup's. What is hand-written is the two checks: the host (`rustc -vV`'s `host:` line against the target) and the existence of both binaries, the same two the `build-native` action makes on the other targets; no built-in covers "this VM is the target you named" or "a build that exits 0 made no binary". Their control is the 9 cases above, and the wiring test and 28 new mutants hold every line of the job.
+
+**Failure modes.** A compile or link error on FreeBSD only (the stage's reason to exist); the action's own setup failing (a QEMU, download or SSH error before any command of ours: a retry, then the pinned release); a `pkg` or `rustup` network error in the VM; FreeBSD 14.5 leaving the package mirror (a calendar item, above); the runner losing `/dev/kvm` (not seen: a software-emulated VM would run into the 45-minute timeout); a VM image or hypervisor that the action's builder changes under its own tag (the action is pinned by commit, but the images and the hypervisor it downloads are not pinned by us); **a red night that nobody reads**.
+
+**Open risks, not measured, and the owner's.** (1) **Third-party code runs on the runner**: the action downloads QEMU and a FreeBSD image from its builder's releases and runs them. The job has `contents: read`, no secret, no environment and no token (the checkout does not persist credentials), the runner is ephemeral, and the action is pinned by commit; the images are not pinned by us. (2) **Only the build is proved**: the test suite does not run on FreeBSD, and Tier 2 does not promise a working build. (3) No cache: each run installs rustup and the toolchain (9 s) and downloads the crates inside the compile; a cache of the target directory would have to cross the VM's file sync, which costs what it saves [derived, not measured].
+
+**Pass log.**
+
+| Pass | Where | Evidence |
+|---|---|---|
+| 1 PoC | #381's runs `45319311424` and `45320359732` | both VM actions built both binaries on FreeBSD 14.5; the controls above (9 cases under dash) |
+| 2 Prototype | #381 | the pull-request path trigger started it (green, twice); the night and the release-candidate push cannot run before the merge |
+| 3 Documented | #381 | the job's comment, `cicd.md`, `running.md` (a row, a runbook), the workflows index |
+| 4 "MVP" | #381 | not in the gate; the wiring test (307 checks) and the mutants (515 of 515 killed, 17 that change nothing survive, none broken; 28 are new); the 28 guards of `deps`, the workflow lint, `actionlint`, the shell, YAML and book guards |
+| 5 Caching | #381 | **none, with the numbers**: the one action that caches wrote 1.0 GB, restored it slower than a fresh download, and was not chosen; the chosen one has none and takes 236 s. A cache of `~/.cargo` or of the target directory would cross the VM's sync [derived] |
+| 6, 7 | #381 | one job on no critical path, nothing to parallelise; the compile is 150 s of the 236 |
+
 ### Follow-up (2026-11-23): release-plz's twin branch, and what the cache costs
 
 Two questions the owner asked after #367, with the owner's answers and what was read to give them.
@@ -432,6 +520,7 @@ asked at stage 2. The native steps of `linux`, `macos` and `windows` are the sam
 | 4. The deploy bundle | **Stays** built and attested by `deploy.yml` and `release.yml` through `build-bundle`. Moving it is Phase 4's, with its verifier |
 | Added at stage 3 (2026-11-23): are the macOS build jobs required checks? | **No.** The owner: "I'd prefer if macos build jobs weren't required checks. These are useful, but I see them as lower priority checks that should run during either a pre-release check or nightly." Read as: **outside `gate` altogether** (a red run blocks no pull request and no release candidate), in a workflow of their own, `build-extended.yml`, **nightly and when a release candidate is pushed**. The other reading (planned only in full runs, so required of a release candidate's `gate` and of nothing else) is one planner rule away, and the owner had not yet said whether the Windows and BSD stages are to be treated the same (answered below) |
 | Added at stage 4 (2026-11-23): where do the Windows, BSD and docker builds belong? | **In `build-extended.yml`, outside the gate: agreed** (the owner, 2026-11-23, to the recommendation put in #367: "Where do Windows, BSD and docker belong: agreed"). `windows` is there; `bsd` and `docker` go there when their stages run. If the owner ever wants one required, it moves to `build.yml` and the planner (a rule for the paths of the server's closure, as `linux` has) |
+| Added at stage 6 (2026-11-24): is a FreeBSD build worth having, with which action, on which release? | Put to the owner with both VM actions built and run (the table in [stage 6](#stage-6-in-detail-bsd)). The owner chose: **keep the stage, with `cross-platform-actions/action`** (236 s, no cache entry), and **FreeBSD 14.5** (the oldest release that stays supported). Both were my recommendations. The other options were `vmactions/freebsd-vm`, dropping the stage, FreeBSD 15.1 and both releases |
 
 The questions as asked:
 
