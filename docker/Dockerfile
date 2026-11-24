@@ -17,8 +17,10 @@
 #   (`distroless/static`): the binaries are all that is in it, besides the CA bundle and the `nonroot` user. The server's TLS is rustls, with no
 #   OpenSSL: the web roots of OIDC and SMTP are compiled in (webpki-roots, through reqwest and lettre), and Postgres' `verify-ca` reads the
 #   operator's own CA file at run time, so that file is mounted into the container, not baked into it. The owner chose this over glibc
-#   (`distroless/cc`: the two cargo builds took 222 s against 296 s on musl, and the image is ~45 MB against ~20 MB; both measured emulated, amd64 on a
-#   Mac) on 2026-11-23. THE RISK THAT CHOICE TAKES, not measured for this server: musl's default allocator is reported
+#   (`distroless/cc`) on 2026-11-23. On a hosted runner, cold, the job took 324 s and 236 s on musl (two runs) and 149 s on glibc (one), the two cargo builds
+#   307 s and 213 s against 115 s: musl's compile is about twice as long (1.8 to 2.65 times), which an emulated run on a Mac had put at 1.3. The image is
+#   15.4 MB against 40.5 MB (`docker image ls`).
+#   THE RISK THAT CHOICE TAKES, not measured for this server: musl's default allocator is reported
 #   to be slower than glibc's under multi-threaded load (public posts say 25% to several times), and its DNS resolver differs. The remedy for
 #   the allocator is a global allocator in `thrust-server` (a code change, not this file's); if a load test says so, glibc is a two-line change.
 # * THE BASES ARE PINNED BY DIGEST (the index, so it covers every platform), resolved 2026-11-23 with
