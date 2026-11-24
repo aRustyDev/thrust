@@ -144,3 +144,88 @@ jobs:
             *"DATABASE_URL must be set"*) ;;
             *) echo "::error::migrate did not run in the image: it should refuse for want of DATABASE_URL"; exit 1 ;;
           esac
+
+  # PROOF OF CONCEPT (stage 6): the same build inside a real FreeBSD VM on the Linux runner, by two public actions, to compare them. Not the final shape.
+  bsd-cpa:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The runner
+        run: |
+          ls -l /dev/kvm || true
+          nproc
+          free -m
+      - uses: cross-platform-actions/action@30cde56b87a128507bebea9531205087890ee360 # v1.8.0
+        with:
+          operating_system: freebsd
+          version: '14.5'
+          architecture: x86-64
+          cpu_count: 4
+          shell: sh
+          sync_files: runner-to-vm
+          run: |
+            set -eu
+            t0="$(date +%s)"
+            lap() { echo "LAP $1: $(( $(date +%s) - t0 )) s"; }
+            uname -a
+            freebsd-version
+            sysctl -n hw.ncpu hw.physmem
+            pwd
+            pkg install -y curl
+            lap pkg-curl
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none --no-modify-path
+            . "$HOME/.cargo/env"
+            rustup toolchain install --profile minimal --no-self-update
+            lap rustup
+            rustc -vV
+            test "$(rustc -vV | sed -n 's/^host: //p')" = x86_64-unknown-freebsd
+            export CARGO_TARGET_DIR=/tmp/thrust-target
+            cargo build --release --locked -p thrust-server
+            lap server
+            cargo build --release --locked -p thrust-adapters-postgres --features native --bin migrate
+            lap migrate
+            ls -l /tmp/thrust-target/release/thrust-server /tmp/thrust-target/release/migrate
+            file /tmp/thrust-target/release/thrust-server
+
+  bsd-vm:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: vmactions/freebsd-vm@811efaaac0668df8bfb8308c3ec997b5ab50037b # v1.6.0
+        with:
+          release: '14.5'
+          cpu: 4
+          copyback: false
+          prepare: |
+            pkg install -y curl
+          run: |
+            set -eu
+            t0="$(date +%s)"
+            lap() { echo "LAP $1: $(( $(date +%s) - t0 )) s"; }
+            uname -a
+            freebsd-version
+            sysctl -n hw.ncpu hw.physmem
+            pwd
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none --no-modify-path
+            . "$HOME/.cargo/env"
+            rustup toolchain install --profile minimal --no-self-update
+            lap rustup
+            rustc -vV
+            test "$(rustc -vV | sed -n 's/^host: //p')" = x86_64-unknown-freebsd
+            export CARGO_TARGET_DIR=/tmp/thrust-target
+            cargo build --release --locked -p thrust-server
+            lap server
+            cargo build --release --locked -p thrust-adapters-postgres --features native --bin migrate
+            lap migrate
+            ls -l /tmp/thrust-target/release/thrust-server /tmp/thrust-target/release/migrate
+            file /tmp/thrust-target/release/thrust-server
