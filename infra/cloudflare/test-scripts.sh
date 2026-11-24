@@ -221,6 +221,84 @@ echo "${good//\"thrust-pg-dev\"/\"thrust-pr-12\"}" >"$tmp/list.json"
 rc="$(run ensure thrust-pr-12 --vpc-service thrust-pg-dev --user pr_12)"
 grep -q " -X POST " "$FAKE_CALLS" && bad "control: ensure POSTed although the config exists" || ok "control: an existing config is never re-created (no POST)"
 
+# --- dedicated snapshot-restored Preview cluster Hyperdrives ---------------------------------
+# These names are the PreviewClusterPlan contract. They MUST use an explicit dedicated VPC
+# service id; accepting the shared thrust-pg-dev service here would defeat per-cluster isolation.
+preview_name='thrust-preview-pr-42-43cba3a2caeb'
+preview_sid='preview-vpc-service-42'
+echo '{"success":true,"errors":[],"result":[]}' >"$tmp/list.json"
+rc="$(run ensure-preview-cluster "$preview_name" --vpc-service-id "$preview_sid" --user pr_42)"
+if [[ "$rc" == 0 ]] && grep -q " -X POST " "$FAKE_CALLS"; then
+  python3 - "$FAKE_POST_BODY" "$preview_name" "$preview_sid" "$pw" "$PRL" <<'PY' && ok "ensure-preview-cluster pins a dedicated VPC service and bounded pr_42 origin" || bad "ensure-preview-cluster POST shape"
+import json, sys
+b = json.load(open(sys.argv[1]))
+assert b["name"] == sys.argv[2]
+assert b["origin"] == {"scheme": "postgresql", "database": "thrust", "user": "pr_42", "password": sys.argv[4], "service_id": sys.argv[3]}
+assert b["caching"] == {"disabled": True}
+assert b["origin_connection_limit"] == int(sys.argv[5])
+PY
+else bad "ensure-preview-cluster create (rc=$rc)"; fi
+grep -qF "$pw" "$FAKE_CALLS" && bad "preview cluster password reached curl argv" || ok "preview cluster password is not in curl argv"
+
+: >"$FAKE_CALLS"
+rc="$(run ensure-preview-cluster "$preview_name" --vpc-service thrust-pg-dev --user pr_42 --dry-run)"
+[[ "$rc" == 2 ]] && ! grep -q ' -X POST ' "$FAKE_CALLS" && ok "control: preview cluster refuses the shared dev VPC service" || bad "control preview shared service (rc=$rc)"
+rc="$(run ensure-preview-cluster "$preview_name" --vpc-service-id "$preview_sid" --user pr_43 --dry-run)"
+[[ "$rc" == 2 ]] && ok "control: preview cluster refuses a different PR login" || bad "control preview mismatched login (rc=$rc)"
+rc="$(run ensure-preview-cluster thrust-preview-pr-42-not-a-fingerprint --vpc-service-id "$preview_sid" --user pr_42 --dry-run)"
+[[ "$rc" == 2 ]] && ok "control: preview cluster refuses a noncanonical name" || bad "control preview noncanonical name (rc=$rc)"
+rc="$(run ensure-preview-cluster "$preview_name" --vpc-service-id 'not/a-vpc-id' --user pr_42 --dry-run)"
+[[ "$rc" == 2 ]] && ok "control: preview cluster refuses a malformed dedicated VPC service id" || bad "control preview malformed VPC id (rc=$rc)"
+
+preview_config=$(python3 - "$preview_name" "$preview_sid" "$PRL" <<'PY'
+import json, sys
+name, sid, limit = sys.argv[1:]
+print(json.dumps({"success": True, "errors": [], "result": [{
+  "id": "preview-hyperdrive-42", "name": name,
+  "origin": {"scheme": "postgresql", "database": "thrust", "user": "pr_42", "service_id": sid},
+  "caching": {"disabled": True}, "origin_connection_limit": int(limit),
+}]}))
+PY
+)
+echo "$preview_config" >"$tmp/list.json"
+: >"$FAKE_CALLS"
+rc="$(run ensure-preview-cluster "$preview_name" --vpc-service-id "$preview_sid" --user pr_42)"
+[[ "$rc" == 0 ]] && ! grep -q ' -X POST ' "$FAKE_CALLS" && ok "ensure-preview-cluster does not recreate a matching config" || bad "preview existing config (rc=$rc)"
+
+# The receipt is deliberately only opaque platform identifiers. Test every origin field and
+# duplicate/missing inventory as controls; a verifier that just recognizes the name is unsafe.
+python3 - "$script" "$FAKE_LIST" "$preview_name" "$preview_sid" "$PRL" <<'PY' && ok 'verify-preview-cluster rejects drift and emits only its non-secret receipt' || bad 'verify-preview-cluster isolation controls'
+import copy, json, os, subprocess, sys
+script, fixture, name, sid, limit = sys.argv[1:]
+item = {"id": "preview-hyperdrive-42", "name": name,
+        "origin": {"scheme": "postgresql", "database": "thrust", "user": "pr_42", "service_id": sid},
+        "caching": {"disabled": True}, "origin_connection_limit": int(limit)}
+def run(items):
+    with open(fixture, "w") as f: json.dump({"success": True, "result": items}, f)
+    return subprocess.run([script, "verify-preview-cluster", name, "--vpc-service-id", sid, "--user", "pr_42"], capture_output=True, text=True, env=os.environ)
+good = run([item])
+assert good.returncode == 0, good.stderr
+assert json.loads(good.stdout) == {"id": item["id"], "name": name, "vpc_service_id": sid}
+cases = []
+for key, value in (("scheme", "mysql"), ("database", "other"), ("user", "pr_99"), ("service_id", "vpc-dev")):
+    wrong = copy.deepcopy(item); wrong["origin"][key] = value; cases.append([wrong])
+for key, value in (("id", "not/an-id"), ("caching", {}), ("origin_connection_limit", int(limit) + 1), ("origin_connection_limit", 4), ("origin_connection_limit", True)):
+    wrong = copy.deepcopy(item); wrong[key] = value; cases.append([wrong])
+duplicate = copy.deepcopy(item); duplicate["id"] = "another-preview-hyperdrive"
+cases += [[], [item, duplicate]]
+for case in cases:
+    result = run(case)
+    assert result.returncode != 0 and not result.stdout, (case, result.stdout, result.stderr)
+PY
+echo "$preview_config" >"$tmp/list.json"
+rc="$(run drop-preview-cluster "$preview_name")"
+[[ "$rc" == 0 ]] && grep -q '/hyperdrive/configs/preview-hyperdrive-42' "$FAKE_CALLS" && ok "drop-preview-cluster deletes only its exact config id" || bad "drop-preview-cluster delete (rc=$rc): $(<"$tmp/out")"
+echo '{"success":true,"errors":[],"result":[]}' >"$tmp/list.json"
+rc="$(run drop-preview-cluster "$preview_name")"
+[[ "$rc" == 0 ]] && ! grep -q ' -X DELETE ' "$FAKE_CALLS" && ok "drop-preview-cluster treats absence as idempotent" || bad "drop-preview-cluster absent (rc=$rc)"
+rc="$(run drop-preview-cluster thrust-preview-pr-42-not-a-fingerprint)"
+[[ "$rc" == 2 ]] && ok "control: drop-preview-cluster refuses a noncanonical selector" || bad "control preview delete selector (rc=$rc)"
+
 # --- managed per-PR inventory and deletion ----------------------------------------------------
 prconfigs='{"success":true,"errors":[],"result":[
  {"id":"h1","name":"thrust-pg","origin":{"scheme":"postgresql","database":"thrust","user":"thrust","service_id":"vpc-prod"}},

@@ -29,6 +29,12 @@
 #       password comes from $HYPERDRIVE_ORIGIN_PASSWORD, a 0600 file, or AWS Secrets Manager
 #       (`aws secretsmanager get-secret-value`, read inside this process). It is never printed.
 #       --dry-run prints the request with the password redacted and makes NO network call.
+#   hyperdrive.sh ensure-preview-cluster <canonical-cluster-name> --vpc-service-id <id> --user <pr_n>
+#                        [--database thrust] [--origin-connection-limit N]
+#                        [--password-file <file> | --password-sm-key <name>] [--dry-run]
+#       Creates or verifies the Hyperdrive origin for one snapshot-restored Preview CNPG cluster.
+#       The explicit VPC service ID is required: this command never routes a Preview through the
+#       durable development service.
 #   hyperdrive.sh rotate-password <config-name> [--password-file <file> | --password-sm-key <name>] [--dry-run]
 #       Replaces ONLY the origin password of an existing VPC-service config (PUT with the live
 #       origin rebuilt around the new password). A PUT RESETS any omitted caching block to
@@ -44,6 +50,11 @@
 #       This does not prove the stored password or the database's schema ownership.
 #   hyperdrive.sh drop-pr <pr-number>
 #       Deletes only the exact config named thrust-pr-<pr-number>. Missing is success.
+#   hyperdrive.sh verify-preview-cluster <canonical-cluster-name> --vpc-service-id <id> --user <pr_n>
+#       Read-only verification of the exact dedicated VPC origin. Prints a non-secret receipt
+#       only when the unique config has caching disabled and every origin identity matches.
+#   hyperdrive.sh drop-preview-cluster <canonical-cluster-name>
+#       Deletes only that canonical Preview cluster config. Missing is success.
 #
 # Environment: HYPERDRIVE_API_TOKEN, else CLOUDFLARE_API_TOKEN (Account > Hyperdrive > Write for
 # `ensure`/`rotate-password`, Read for `check`), CLOUDFLARE_ACCOUNT_ID. VPC service ids come from the flags, from
@@ -67,6 +78,14 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 die() { echo "hyperdrive: $*" >&2; exit "${2:-2}"; }
+
+canonical_preview_cluster() {
+  [[ "$1" =~ ^thrust-preview-pr-([1-9][0-9]{0,8})-[0-9a-f]{12}$ ]]
+}
+
+opaque_id() {
+  [[ "$1" =~ ^[A-Za-z0-9_-]{1,128}$ ]]
+}
 
 need_env() {
   [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]] || die "CLOUDFLARE_ACCOUNT_ID is not set" 3
@@ -187,9 +206,11 @@ case "$cmd" in
     judge thrust-pg-dev "$dev_sid" thrust thrust || rc=1
     exit "$rc"
     ;;
-  ensure)
+  ensure|ensure-preview-cluster)
+    preview_cluster=0
+    [[ "$cmd" == "ensure-preview-cluster" ]] && preview_cluster=1
     name="${1:-}"
-    [[ -n "$name" && "$name" != --* ]] || die "ensure needs a config name"
+    [[ -n "$name" && "$name" != --* ]] || die "$cmd needs a config name"
     shift
     service="" user="" database="thrust" sid="" limit="" pwfile="" smkey="" dry=0 nocache=1
     while [[ $# -gt 0 ]]; do
@@ -207,10 +228,23 @@ case "$cmd" in
       esac
       shift
     done
-    [[ "$service" == "thrust-pg" || "$service" == "thrust-pg-dev" ]] || die "--vpc-service must be thrust-pg or thrust-pg-dev"
+    if [[ "$preview_cluster" -eq 1 ]]; then
+      if [[ "$name" =~ ^thrust-preview-pr-([1-9][0-9]{0,8})-[0-9a-f]{12}$ ]]; then
+        preview_number="${BASH_REMATCH[1]}"
+      else
+        die "ensure-preview-cluster needs a canonical thrust-preview-pr-<number>-<12 lowercase hex> name"
+      fi
+      [[ -z "$service" ]] || die "ensure-preview-cluster requires --vpc-service-id, never --vpc-service"
+      opaque_id "$sid" || die "ensure-preview-cluster requires a bounded opaque --vpc-service-id"
+    else
+      [[ "$service" == "thrust-pg" || "$service" == "thrust-pg-dev" ]] || die "--vpc-service must be thrust-pg or thrust-pg-dev"
+    fi
     [[ -n "$user" ]] || die "--user is required"
     [[ "$name" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || die "config name must match [A-Za-z0-9._-]{1,64}"
     [[ "$user" =~ ^[a-z_][a-z0-9_]*$ && "$database" =~ ^[a-z_][a-z0-9_]*$ ]] || die "user/database must be plain lowercase identifiers"
+    if [[ "$preview_cluster" -eq 1 ]]; then
+      [[ "$user" == "pr_$preview_number" ]] || die "ensure-preview-cluster requires --user pr_$preview_number for $name"
+    fi
     [[ -z "$limit" || "$limit" =~ ^[0-9]+$ ]] || die "--origin-connection-limit must be a number"
     [[ -z "$limit" ]] || limit=$((10#$limit)) # "08" is not an octal error
     # Hyperdrive's documented floor: Create Hyperdrive API reference, origin_connection_limit "minimum 5".
@@ -358,6 +392,51 @@ json.dump({"number": int(number), "id": ident, "name": name}, sys.stdout)
 print()
 PY
     ;;
+  verify-preview-cluster)
+    name="${1:-}"
+    [[ -n "$name" && "$name" != --* ]] || die "verify-preview-cluster needs a canonical cluster name"
+    shift
+    sid="" user="" database="thrust"
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --vpc-service-id) sid="$2"; shift ;;
+        --user) user="$2"; shift ;;
+        --database) database="$2"; shift ;;
+        *) die "unknown flag $1" ;;
+      esac
+      shift
+    done
+    if [[ "$name" =~ ^thrust-preview-pr-([1-9][0-9]{0,8})-[0-9a-f]{12}$ ]]; then
+      preview_number="${BASH_REMATCH[1]}"
+    else
+      die "verify-preview-cluster needs a canonical thrust-preview-pr-<number>-<12 lowercase hex> name"
+    fi
+    opaque_id "$sid" || die "verify-preview-cluster requires a bounded opaque --vpc-service-id"
+    [[ "$user" == "pr_$preview_number" ]] || die "verify-preview-cluster requires --user pr_$preview_number for $name"
+    [[ "$database" =~ ^[a-z_][a-z0-9_]*$ ]] || die "database must be a plain lowercase identifier"
+    need_env
+    list_configs >"$tmp/configs.json"
+    python3 - "$tmp/configs.json" "$name" "$sid" "$user" "$database" "$THRUST_PR_ROLE_CONNECTION_LIMIT" <<'PY'
+import json, re, sys
+path, name, sid, user, database, limit = sys.argv[1:]
+items = [item for item in json.load(open(path)) if item.get("name") == name]
+if len(items) != 1:
+    raise SystemExit(f"hyperdrive: expected one {name} configuration, found {len(items)}")
+item = items[0]
+origin = item.get("origin")
+caching = item.get("caching")
+ident = item.get("id")
+connection_limit = item.get("origin_connection_limit")
+if (not isinstance(ident, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", ident)
+        or not isinstance(origin, dict) or origin.get("scheme") not in ("postgres", "postgresql")
+        or origin.get("service_id") != sid or origin.get("database") != database or origin.get("user") != user
+        or not isinstance(caching, dict) or caching.get("disabled") is not True
+        or type(connection_limit) is not int or not 5 <= connection_limit <= int(limit)):
+    raise SystemExit(f"hyperdrive: {name} does not match the expected dedicated origin, cache or connection limit")
+json.dump({"id": ident, "name": name, "vpc_service_id": sid}, sys.stdout)
+print()
+PY
+    ;;
   list-pr)
     [[ $# -eq 0 ]] || die "list-pr takes no arguments"
     need_env
@@ -372,10 +451,16 @@ for c in json.load(open(sys.argv[1])):
 print(json.dumps(sorted(out, key=lambda x: x["number"])))
 ' "$tmp/configs.json"
     ;;
-  drop-pr)
-    n="${1:-}"
-    [[ "$n" =~ ^[0-9]{1,9}$ && $# -eq 1 ]] || die "drop-pr needs one 1-9 digit PR number"
-    name="thrust-pr-$n"
+  drop-pr|drop-preview-cluster)
+    selector="${1:-}"
+    if [[ "$cmd" == "drop-preview-cluster" ]]; then
+      [[ "$#" -eq 1 ]] || die "drop-preview-cluster needs one canonical cluster name"
+      canonical_preview_cluster "$selector" || die "drop-preview-cluster needs a canonical thrust-preview-pr-<number>-<12 lowercase hex> name"
+      name="$selector"
+    else
+      [[ "$selector" =~ ^[0-9]{1,9}$ && $# -eq 1 ]] || die "drop-pr needs one 1-9 digit PR number"
+      name="thrust-pr-$selector"
+    fi
     need_env
     list_configs >"$tmp/configs.json"
     cfg_id="$(NAME="$name" python3 - "$tmp/configs.json" <<'PY'
