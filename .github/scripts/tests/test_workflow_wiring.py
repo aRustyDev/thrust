@@ -409,7 +409,7 @@ if ext_text is not None:
           all("    permissions:\n      contents: read\n" in block(ext_text, j) for j in job_ids(ext_text)), True)
     check(f"{EXT_PATH} has one run in flight per ref, and a push or a pull request replaces the one before it",
           "concurrency:\n  group: build-extended-${{ github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}\n" in ext_text, True)
-    check(f"{EXT_PATH} has the jobs macos, windows and docker and no other (the targets that follow are added to it on purpose)", job_ids(ext_text), ["macos", "windows", "docker"])
+    check(f"{EXT_PATH} has the jobs macos, windows, docker and bsd and no other (the targets that follow are added to it on purpose)", job_ids(ext_text), ["macos", "windows", "docker", "bsd"])
 
 # The image of the server (Build phase, stage 5): docker/Dockerfile, its ignore file and the job `docker` of build-extended.yml, which builds the image and starts it once. The owner chose static
 # musl on distroless, the numeric user 65532, the directory docker/ and a start check as well as a build (2026-11-23). Things about them that can be wrong and leave the job green:
@@ -472,6 +472,39 @@ if ext_text is not None:
           ('--entrypoint /usr/local/bin/migrate "$IMAGE"' in docker_block, '*"DATABASE_URL must be set"*) ;;' in docker_block), (True, True))
     check(f"{EXT_PATH}: docker publishes nothing and keeps nothing: no login, no push, no registry, no secret, no environment, no id-token, no upload",
           [l for l in docker_run if re.search(r"docker (login|push)|--push|login-action|build-push-action|ghcr\.io|secrets\.|environment:|id-token|attestations|packages:|contents: write|upload-artifact", l)], [])
+
+    # The FreeBSD build (Build phase, stage 6): the owner chose cross-platform-actions/action on FreeBSD 14.5, in a job of this workflow (2026-11-23). Things about it that can be wrong and leave the job green:
+    # an action that is not pinned by a commit (a tag moves, and this one runs a third party's QEMU and image on the runner), a second third-party action, a release other than the oldest one that stays
+    # supported (the proof speaks for that release and the newer ones), a VM that is not x86-64 FreeBSD, files synced back from the VM (the whole target directory, hundreds of megabytes), the action's
+    # deprecated `run` input, a step that does not run in the VM, a pkg without sudo (the VM user is not root: measured), a compiler that is not rust-toolchain.toml's (rustup's default toolchain, or none installed),
+    # a host that is not checked (a VM on another system would pass), cargo commands that are not build-native's (the proof is of the same binaries), a vacuous build that is not caught, and a job that publishes.
+    native_cmds = re.findall(r"run: scripts/rs (cargo build [^\n]+)\n", native_action)
+    bsd_block = block(ext_text, "bsd")
+    bsd_run = [l for l in bsd_block.splitlines() if not l.strip().startswith("#")]
+    check(f"{EXT_PATH}: bsd runs on ubuntu-24.04, a pinned image, for 45 minutes at most", "    runs-on: ubuntu-24.04\n    timeout-minutes: 45\n" in bsd_block, True)
+    check(f"{EXT_PATH}: bsd's only actions are checkout and cross-platform-actions/action, each pinned by a full commit with its version in a comment",
+          re.findall(r"^      - uses: (\S+@[0-9a-f]{40}) # (v\S+)$", bsd_block, re.M),
+          [("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "v7.0.1"), ("cross-platform-actions/action@30cde56b87a128507bebea9531205087890ee360", "v1.8.0")])
+    check(f"{EXT_PATH}: bsd uses no other action (every `uses:` line is one of those two)", len([l for l in bsd_run if re.match(r"^\s+- uses:", l)]), 2)
+    check(f"{EXT_PATH}: bsd builds in x86-64 FreeBSD 14.5, the oldest release that stays supported, with four CPUs, and syncs files to the VM only",
+          "        with:\n          operating_system: freebsd\n          version: '14.5'\n          architecture: x86-64\n          cpu_count: 4\n          shell: sh\n          sync_files: runner-to-vm\n" in bsd_block, True)
+    check(f"{EXT_PATH}: bsd runs its commands in the VM with the action's cpa.sh shell, once, and does not use the action's deprecated `run` input",
+          ("      - name: Build in the VM\n        shell: cpa.sh {0}\n        run: |\n" in bsd_block, len([l for l in bsd_run if re.match(r"^\s+run:", l)])), (True, 1))
+    bsd_order = [bsd_block.find(s) for s in ("uses: actions/checkout@", "uses: cross-platform-actions/action@", "- name: Build in the VM")]
+    check(f"{EXT_PATH}: bsd checks the code out, starts the VM, then builds in it, in that order", (bsd_order == sorted(bsd_order), -1 in bsd_order), (True, False))
+    check(f"{EXT_PATH}: bsd installs curl with pkg under sudo (the VM user is not root), then rustup with no default toolchain, then the toolchain rust-toolchain.toml pins, in the minimal profile",
+          0 <= bsd_block.find("          sudo pkg install -y curl\n") < bsd_block.find("--default-toolchain none --no-modify-path\n") < bsd_block.find("          rustup toolchain install --profile minimal --no-self-update\n"), True)
+    check(f"{EXT_PATH}: bsd checks that the VM's Rust host is x86_64-unknown-freebsd, before it builds anything",
+          '          host="$(rustc -vV | sed -n \'s/^host: //p\')"\n          test "$host" = x86_64-unknown-freebsd || { echo "::error::this VM\'s Rust host is \'$host\', and the job is a proof for \'x86_64-unknown-freebsd\'"; exit 1; }\n' in bsd_block
+          and 0 < bsd_block.find("test \"$host\" = x86_64-unknown-freebsd") < bsd_block.find("cargo build"), True)
+    check(f"{EXT_PATH}: bsd keeps its target directory in the VM, outside the synced workspace", "          export CARGO_TARGET_DIR=/tmp/thrust-target\n" in bsd_block, True)
+    check(f"{EXT_PATH}: bsd builds with the two commands of build-native, in release and locked, the server first (the proof is of the same binaries)",
+          (len(native_cmds), [c for c in native_cmds if f"          {c}\n" not in bsd_block], 0 < bsd_block.find(f"          {native_cmds[0]}\n") < bsd_block.find(f"          {native_cmds[1]}\n")), (2, [], True))
+    check(f"{EXT_PATH}: bsd checks that both binaries exist and can be run, and fails when one does not, after both builds",
+          '          for bin in thrust-server migrate; do\n            test -x "$CARGO_TARGET_DIR/release/$bin" || { echo "::error::cargo built nothing at $CARGO_TARGET_DIR/release/$bin"; exit 1; }\n          done\n' in bsd_block
+          and bsd_block.find("for bin in thrust-server migrate") > bsd_block.find(f"          {native_cmds[1]}\n") > 0, True)
+    check(f"{EXT_PATH}: bsd publishes nothing and uploads nothing: no login, no registry, no secret, no environment, no id-token, no upload",
+          [l for l in bsd_run if re.search(r"docker (login|push)|--push|login-action|ghcr\.io|secrets\.|environment:|id-token|attestations|packages:|contents: write|upload-artifact", l)], [])
 
 # The bash job (Lint phase, stage 1) runs shellcheck over the scripts the repository maintains, through .github/scripts/check-shell.sh. Four things about
 # it can be wrong and leave the job looking healthy until the runner differs from a laptop: a shellcheck installed at a version the helper is not held to (the
