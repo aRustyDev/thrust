@@ -4,9 +4,10 @@ This page describes the infrastructure the repository declares: what each adapte
 configured with, and how to run it. The Worker has a deploy pipeline (`deploy.yml`, [CI/CD](cicd.md#the-deploy-pipeline),
 [Deploying the Worker](deploy.md)); the resources it deploys to (the Postgres clusters, the Hyperdrive configurations,
 the tunnel, the buckets and queues) are the infrastructure repository's, and are not declared here. The project has no
-Dockerfile, compose file, Helm chart or OpenTofu of its own. Its workflows run the tests and deploy the Worker; nothing
-publishes the self-hosted server. Examples of a Dockerfile, a chart and workflows are kept under `.agents/` as skill
-material, and they are not this project's files.
+compose file or Helm chart of its own, and one Dockerfile, for the self-hosted server ([the image](#the-image-of-the-server)):
+CI builds it and starts it once, and nothing publishes it. Its workflows run the tests and deploy the Worker. Examples of a
+Dockerfile (not this one), a chart and workflows are kept under `.agents/` as skill material, and they are not this project's
+files.
 
 The Worker configuration has run locally under `wrangler dev` and once against real Cloudflare resources (the
 2026-10-18 spike run, torn down afterwards). The configuration a deploy uses is a template (`wrangler.deploy.toml`,
@@ -176,6 +177,41 @@ The Worker reads `THRUST_ADAPTERS`,
 is not a number of days stops it building its app, which is every request, queue batch and cron run). Its database comes
 from the Hyperdrive binding, so it has no `DATABASE_URL`. The server turns a panic in a handler into a JSON 500 and
 logs the cause.
+
+### The image of the server
+
+`docker/Dockerfile` builds `thrust-server` and `migrate` into one image of about 20 MB. Build it from the repository root:
+
+```sh
+docker build -f docker/Dockerfile -t thrust-server .
+docker run --rm -p 8080:8080 thrust-server                         # the memory adapters; /healthz answers
+docker run --rm -e DATABASE_URL --entrypoint /usr/local/bin/migrate thrust-server
+```
+
+What it is, and why `[verified 2026-11-23 locally, linux/amd64 under emulation: built from `main` at c457ce3b, then run]`:
+
+- **Static, on musl, with nothing under it.** The builder is `rust:alpine3.24`, whose own target is `x86_64-unknown-linux-musl`, so the binaries are
+  `static-pie` and the runtime is `gcr.io/distroless/static-debian13:nonroot` (a CA bundle and the `nonroot` user, no libc, no shell). The server's TLS is
+  rustls: the web roots of OIDC and SMTP are compiled in (`webpki-roots`), and Postgres' `verify-ca` reads the CA file the operator gives it, so mount that
+  file into the container. Both bases are pinned by the digest of their index, and nothing bumps them (the repository's Dependabot has no `docker`
+  ecosystem).
+- **The compiler is `rust-toolchain.toml`'s.** The builder is named for its system, not for a Rust version, and `rustup toolchain install` installs
+  what the file pins when the image's own differs (a file that pinned 1.99.1 downloaded it in 13 s). Dependabot's bump of the file is the image's too.
+- **It runs as `65532:65532`**, numeric, so that Kubernetes' `runAsNonRoot` can verify it. The server writes nothing to disk, so a read-only root
+  filesystem works.
+- **`THRUST_LISTEN` is baked in as `0.0.0.0:8080`**, because the server's own default (`127.0.0.1`) cannot be reached through a published port.
+  Everything else (`THRUST_ADAPTERS`, `DATABASE_URL`, the tokens) is given at run time, and `THRUST_TEST_ROUTES` must never be set in an image.
+- **It stops on SIGINT.** The server handles SIGINT only (`tokio::signal::ctrl_c`), and as PID 1 it ignores SIGTERM: `docker kill -s TERM` left it running, and
+  `docker stop` (the image's `STOPSIGNAL` is SIGINT) stopped it in under a second with exit 0. A server that handles SIGTERM is a code change.
+  Whether a Kubernetes runtime honours the image's `STOPSIGNAL` was not tested: if it sends SIGTERM, the pod waits out its grace period and is killed.
+- **It has no `HEALTHCHECK`**: the image has no shell and no curl, and Kubernetes ignores the instruction. Probe `/healthz`, which answers `ok` whenever the
+  HTTP server does and says nothing about the database.
+
+What it does not do. It is **not published** anywhere (the Release phase of the CI plan decides what is). It is **not measured under load**: musl's default
+allocator is reported to be slower than glibc's under multi-threaded load (public posts say 25% to several times) and its DNS resolver differs, and nothing
+here tested either for this server; the fix would be a global allocator in `thrust-server`, or a glibc image (`distroless/cc`: the two cargo builds took 222 s
+against 296 s on musl, and the image is about 45 MB against 20 MB, in the same emulated measurement). CI builds it and starts it once, nightly and for a release candidate, in the job `docker` of
+`build-extended.yml` ([CI/CD](cicd.md)); that job is not a required check.
 
 ## Postgres
 
