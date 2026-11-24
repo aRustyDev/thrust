@@ -67,6 +67,15 @@ pub struct PreviewClusterReceipt {
     pub hyperdrive_id: String,
 }
 
+/// The non-secret result of `verify-preview-cluster`. A controller supplies this only after
+/// Cloudflare has checked the Hyperdrive origin against the dedicated VPC service.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VerifiedPreviewConnectivity {
+    pub hyperdrive: String,
+    pub vpc_service_id: String,
+    pub hyperdrive_id: String,
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ClusterReceiptDocument {
@@ -159,6 +168,32 @@ pub fn encode_cluster_receipt(receipt: &PreviewClusterReceipt) -> Option<Vec<u8>
         receipt: receipt.clone(),
     })
     .ok()
+}
+
+/// Combines independently verified CNPG and Cloudflare facts into a deployable receipt.
+///
+/// The Hyperdrive name is part of the plan identity, so a valid Cloudflare response for another
+/// PR or replacement candidate cannot be attached to this lease. This constructor is deliberately
+/// non-serializing: callers must persist only the resulting ready receipt.
+pub fn receipt_from_verified_connectivity(
+    lease: PreviewClusterLease,
+    cluster_uid: String,
+    connectivity: VerifiedPreviewConnectivity,
+) -> Option<PreviewClusterReceipt> {
+    if lease.phase != ClusterLeasePhase::Ready
+        || connectivity.hyperdrive != lease.plan.hyperdrive
+        || !opaque_id(&cluster_uid)
+        || !opaque_id(&connectivity.vpc_service_id)
+        || !opaque_id(&connectivity.hyperdrive_id)
+    {
+        return None;
+    }
+    Some(PreviewClusterReceipt {
+        lease,
+        cluster_uid,
+        vpc_service_id: connectivity.vpc_service_id,
+        hyperdrive_id: connectivity.hyperdrive_id,
+    })
 }
 
 /// The non-secret resource facts checked on every controller retry.
@@ -407,6 +442,14 @@ mod tests {
         }
     }
 
+    fn connectivity(lease: &PreviewClusterLease) -> VerifiedPreviewConnectivity {
+        VerifiedPreviewConnectivity {
+            hyperdrive: lease.plan.hyperdrive.clone(),
+            vpc_service_id: "cloudflare-vpc-service-42".to_owned(),
+            hyperdrive_id: "cloudflare-hyperdrive-42".to_owned(),
+        }
+    }
+
     fn model_action(phase: ClusterLeasePhase, inventory: ClusterLeaseInventory) -> &'static str {
         if phase == ClusterLeasePhase::Deleting {
             return if inventory.connectivity {
@@ -605,6 +648,30 @@ mod tests {
             let _ = parse_cluster_receipt(&bytes);
         }
         #[test]
+        fn prop_verified_connectivity_builds_a_receipt_only_for_its_ready_lease(
+            artifact in digest_strategy(),
+            bootstrap in digest_strategy(),
+            postgres_major in 14_u16..=18,
+            number in 1_i32..=999_999_999,
+            cluster_uid in "[A-Za-z0-9_-]{1,128}",
+            vpc_service_id in "[A-Za-z0-9_-]{1,128}",
+            hyperdrive_id in "[A-Za-z0-9_-]{1,128}",
+        ) {
+            let Some(plan) = preview_cluster_plan(number, &artifact, postgres_major, &bootstrap) else {
+                prop_assert!(false, "valid generated connectivity plan was refused");
+                return Ok(());
+            };
+            let lease = PreviewClusterLease { plan, phase: ClusterLeasePhase::Ready };
+            let connectivity = VerifiedPreviewConnectivity {
+                hyperdrive: lease.plan.hyperdrive.clone(),
+                vpc_service_id,
+                hyperdrive_id,
+            };
+            let receipt = receipt_from_verified_connectivity(lease.clone(), cluster_uid, connectivity);
+            prop_assert!(receipt.is_some());
+            prop_assert_eq!(receipt.as_ref().map(|value| &value.lease), Some(&lease));
+        }
+        #[test]
         fn model_cluster_lease_reconciliation_matches_dependency_table(
             phase in prop_oneof![Just(ClusterLeasePhase::Provisioning), Just(ClusterLeasePhase::Ready), Just(ClusterLeasePhase::Deleting)],
             snapshots in prop::collection::vec(any::<bool>(), 1..32),
@@ -710,6 +777,23 @@ mod tests {
             panic!("test receipt document must encode");
         };
         assert_eq!(parse_cluster_receipt(&document), None);
+    }
+
+    #[test]
+    // Spec example: a Cloudflare result for another Preview must never become this PR's receipt.
+    fn connectivity_receipt_refuses_a_swapped_hyperdrive_name() {
+        let lease = lease(42, ClusterLeasePhase::Ready);
+        let mut verified = connectivity(&lease);
+        verified.hyperdrive = "thrust-preview-pr-43-43cba3a2caeb".to_owned();
+        assert_eq!(receipt_from_verified_connectivity(lease, "cnpg-cluster-uid-42".to_owned(), verified), None);
+    }
+
+    #[test]
+    // Spec example: a pre-ready cluster cannot publish a deployment binding.
+    fn connectivity_receipt_refuses_a_nonready_lease() {
+        let lease = lease(42, ClusterLeasePhase::Provisioning);
+        let verified = connectivity(&lease);
+        assert_eq!(receipt_from_verified_connectivity(lease, "cnpg-cluster-uid-42".to_owned(), verified), None);
     }
 
     #[test]

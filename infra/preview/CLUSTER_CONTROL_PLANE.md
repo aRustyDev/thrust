@@ -38,6 +38,11 @@ only the CNPG cluster UID, VPC service ID and Hyperdrive ID. Those IDs are opaqu
 not credentials. Before emitting a receipt, the controller must verify each ID against the live
 resource and the lease; before deployment, the binding path must verify the receipt again.
 
+`receipt_from_verified_connectivity` is the fail-closed handoff between live verification and
+persistence. It takes a ready lease, CNPG UID, and the non-secret result from
+`verify-preview-cluster`; it rejects a result whose Hyperdrive name differs from the lease's
+derived name before it can become a deployable receipt.
+
 ## Controller boundary
 
 GitHub Actions remains without Kubernetes credentials. The Access-protected Cloudflare provisioner
