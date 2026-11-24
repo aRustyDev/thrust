@@ -131,7 +131,7 @@ others follow; the one with a measured saving second; the probes, which cost not
 | 3 | macos | `macos` (in `build-extended.yml`: **not a required check**, by the owner's decision of 2026-11-23) | nothing | the probe: does the server build on `aarch64-apple-darwin`, how long, what artifact; whether a cache fits the budget | **passes 1 to 7 done** (#365 and #367, merged 2026-11-23, and this record; [below](#stage-3-in-detail-macos)): it builds, first try, in 234 s cold (the server 173 s) and **134 s with the cache** (-46% against the dispatch that saved it); its cache was never saved until #367 fixed the layout (the action called `setup-rust`, two composites deep) |
 | 4 | windows | `windows` (in `build-extended.yml`, **not a required check**: my assumption, on the owner's reasoning for macOS, asked in #367) | nothing | the probe: does `ring` build on `x86_64-pc-windows-msvc`; the shell the steps run in (bash is on the runner) | **passes 1 to 7 done** (#367, merged 2026-11-23, and this record; [below](#stage-4-in-detail-windows)): it builds, first try, in 219 to 290 s cold (the server 136 to 203 s) and **133 s with the cache** (-39%); the stage also found why no native cache was saved |
 | 5 | docker | `docker` (in `build-extended.yml`, **not a required check**: the owner agreed) | nothing: no Dockerfile | question 3; an image built from a Dockerfile of the repository's, **not pushed** | **passes 1 to 7 done** (#379, [below](#stage-5-in-detail-docker)): static musl on `distroless/static`, uid 65532, `docker/Dockerfile`, built **and started once** (the owner's four choices); 219 to 324 s cold on a runner (four runs), and **the musl compile is about twice the glibc one** (1.8 to 2.65 times; the same Dockerfile on glibc: 149 s, one run), which an emulated run could not show. **Merged by the owner as #379 on 2026-11-24 at 03:06Z, with its first commit**; this record is the second pull request |
-| 6 | bsd | `bsd` (in `build-extended.yml`, **not a required check**: the owner agreed) | nothing | question 2; a VM on a hosted runner or a cross toolchain: a survey of public solutions comes first; the stage is dropped if neither is worth its time | **passes 1 to 7 done** (#381, [below](#stage-6-in-detail-bsd)): a FreeBSD 14.5 VM by `cross-platform-actions/action`, KVM, four CPUs: it builds first try, `ring` included, in **236 s** and writes no cache; the other VM action took 264 to 450 s and wrote a 1.0 GB cache entry; the owner chose the first and the release |
+| 6 | bsd | `bsd` (in `build-extended.yml`, **not a required check**: the owner agreed) | nothing | question 2; a VM on a hosted runner or a cross toolchain: a survey of public solutions comes first; the stage is dropped if neither is worth its time | **passes 1 to 7 done** (#381, [below](#stage-6-in-detail-bsd)): a FreeBSD 14.5 VM by `cross-platform-actions/action`, KVM, four CPUs: it builds first try, `ring` included, in **184 to 236 s** (two runs) and writes no cache; the other VM action took 264 to 450 s and wrote a 1.0 GB cache entry; the owner chose the first and the release |
 
 Each stage's section (purpose, acceptance, state machine, steps, a survey of public solutions, custom code and its probe, the pass log) is written **when the stage starts**, not before.
 
@@ -517,7 +517,7 @@ What it shows:
 The native Linux build of the server is 86.5 s on four vCPUs, so the compile in the VM is about 1.5 to 1.7 times that. **KVM works**: a VM under software emulation would be many times slower.
 
 **Acceptance.**
-1. It builds the server and `migrate` in release for `x86_64-unknown-freebsd` on FreeBSD 14.5, in a VM, with the compiler `rust-toolchain.toml` pins. Shown: run `45320359732` (236 s, green); `ring` builds.
+1. It builds the server and `migrate` in release for `x86_64-unknown-freebsd` on FreeBSD 14.5, in a VM, with the compiler `rust-toolchain.toml` pins. Shown: run `45320359732` (236 s, green) and, with the job as it merged, run `45324042521` (184 s, green); `ring` builds.
 2. It fails when the VM is not the target and when a binary is missing, shown by controls: the job's own two checks, taken from the workflow and run under dash, with a stand-in `rustc` and a temporary target directory: the host `x86_64-unknown-freebsd` passes, and `x86_64-unknown-linux-gnu`, `aarch64-unknown-freebsd` and an empty answer fail with the message; both binaries present pass; each one missing, both missing, and both present but not executable fail (9 cases).
 3. It is not in the gate: not called by `ci.yml`, not a job of the planner; the wiring test and the mutants hold that.
 4. It publishes, signs, attests and uploads nothing, and holds no secret, environment or `id-token`; its only third-party action is pinned by commit.
@@ -539,9 +539,11 @@ The native Linux build of the server is 86.5 s on four vCPUs, so the compile in 
 | teardown, end of job | 5 | |
 | **the job** | **236** | `docker` in the same run: 207 s |
 
+**The job as it merged** (run `45324042521`, job `138209195194`; the two checks added, the proof-of-concept's timing lines kept): **184 s**: the VM ready in 12 s (17 s of setup in all), `pkg` 10 s, rustup 8 s, the server 113 s ("1m 53s"), `migrate` 28.6 s; the same binary sizes. 1.3 times between the two runs of the same job: runner variance, and the figure to plan with is the upper one.
+
 What it shows:
 - **It builds, first try, and nothing in the build had to change for FreeBSD.** `ring` (C and assembly) built, and the server's signal handling (`tokio::signal::ctrl_c`) is portable. The binary is a FreeBSD ELF for 14.5.
-- **A VM on the hosted runner is fast enough**: four minutes in all, about what `docker` costs, off every critical path and not in the gate.
+- **A VM on the hosted runner is fast enough**: three to four minutes in all, about what `docker` costs, off every critical path and not in the gate.
 - **The two actions differ in what they do around the VM, not in what they build**: one downloads a small hypervisor and an image in seconds; the other installs QEMU from apt as root and writes a 1.0 GB cache entry, in a repository that is over its cache limit.
 
 **Findings of this stage.**
@@ -563,7 +565,7 @@ What it shows:
 | 2 Prototype | #381 | the pull-request path trigger started it (green, twice); the night and the release-candidate push cannot run before the merge |
 | 3 Documented | #381 | the job's comment, `cicd.md`, `running.md` (a row, a runbook), the workflows index |
 | 4 "MVP" | #381 | not in the gate; the wiring test (307 checks) and the mutants (515 of 515 killed, 17 that change nothing survive, none broken; 28 are new); the 28 guards of `deps`, the workflow lint, `actionlint`, the shell, YAML and book guards |
-| 5 Caching | #381 | **none, with the numbers**: the one action that caches wrote 1.0 GB, restored it slower than a fresh download, and was not chosen; the chosen one has none and takes 236 s. A cache of `~/.cargo` or of the target directory would cross the VM's sync [derived] |
+| 5 Caching | #381 | **none, with the numbers**: the one action that caches wrote 1.0 GB, restored it slower than a fresh download, and was not chosen; the chosen one has none and takes 184 to 236 s. A cache of `~/.cargo` or of the target directory would cross the VM's sync [derived] |
 | 6, 7 | #381 | one job on no critical path, nothing to parallelise; the compile is 150 s of the 236 |
 
 ### Follow-up (2026-11-23): release-plz's twin branch, and what the cache costs

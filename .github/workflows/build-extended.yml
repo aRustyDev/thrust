@@ -148,7 +148,7 @@ jobs:
   # x86_64-unknown-freebsd, in a real FreeBSD 14.5 VM on the Linux runner (Build phase, stage 6). Nothing else in CI runs on a BSD, so a break that only this target sees (a crate that needs an
   # API Linux has and FreeBSD has not, a C dependency whose build script does not know FreeBSD) would be found by the first person to try. The VM is cross-platform-actions/action's (QEMU with
   # KVM, which the hosted runner has; 4 CPUs, 6 GB), pinned by commit. It was chosen over vmactions/freebsd-vm, which built binaries of the same sizes in 264 to 450 s (it apt-installs QEMU on
-  # the runner as root) and writes a 1.0 GB entry per ref to a cache that is over its limit; this job takes about 236 s and writes none. Both were measured on the pull request that added this
+  # the runner as root) and writes a 1.0 GB entry per ref to a cache that is over its limit; this job takes 184 to 236 s and writes none. Both were measured on the pull request that added this
   # job (#381, runs 45319311424 and 45320359732); the survey is in phase 0004 of the CI plan.
   # FreeBSD 14.5 is the OLDEST release that stays supported (14.4 ends on 2026-12-31): a binary built on a release runs on that release and on newer ones, so building on the oldest speaks for
   # them all. Rust is the toolchain rust-toolchain.toml pins, installed by rustup in the VM (the VM has none), so Dependabot's bump of the file is this job's too.
