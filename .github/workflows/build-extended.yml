@@ -1,7 +1,7 @@
 name: build-extended
 
 # The builds that are useful and are not required checks: a compile proof of the native server and `migrate` on macOS (Build phase, stage 3) and on Windows
-# (stage 4), and the targets that follow them (a BSD build, if the owner wants it here too). The owner's decision of 2026-11-23, about macOS: "I'd prefer if macos build jobs weren't
+# (stage 4), the image of the server (stage 5), and the targets that follow them (a BSD build, if the owner wants it here too). The owner's decision of 2026-11-23, about macOS: "I'd prefer if macos build jobs weren't
 # required checks. These are useful, but I see them as lower priority checks that should run during either a pre-release check or nightly."
 #
 # NOT GATED: `ci.yml` does not call this workflow, `gate` does not read it, and a red run blocks nothing (not a pull request, and not a release candidate:
@@ -13,14 +13,15 @@ name: build-extended
 #     moves the real branch to it and deletes the twin). The twin ends at the same commit as the real branch, so a run for it is a duplicate on a branch that
 #     is gone a moment later, and the filter leaves it out (`'!rc/*-tmp-*'`, tried on a probe: the name without `-tmp-` started a run and the twin did not);
 #   * by hand;
-#   * on a pull request that edits this file or the action it uses (build-native, which `linux` of build.yml uses too), so that the file is proved before it
-#     merges: GitHub dispatches only a workflow that is already on the default branch, as for deep.yml and e2e.yml. No other pull request starts it.
+#   * on a pull request that edits this file, the action it uses (build-native, which `linux` of build.yml uses too) or the image's files (docker/), so that the file is
+#     proved before it merges: GitHub dispatches only a workflow that is already on the default branch, as for deep.yml and e2e.yml. No other pull request starts it.
 # A red night is a finding for whoever reads the Actions tab, not a red check on anyone's pull request. Scheduled runs are for the default branch only, and
 # GitHub disables a schedule in a public repository after 60 days without activity.
 #
-# The jobs are the build-native action's steps on a runner of their own: it checks that the compiler's host is the target the job claims, builds `thrust-server`
-# and `migrate` in release with the repository's commands, checks that both exist, and uploads them for three days. Nothing is published, signed or attested.
-# Each job sets Rust up ITSELF, before the action, with a cache key of its own: a cache is not saved when setup-rust is two composite actions deep.
+# `macos` and `windows` are the build-native action's steps on a runner of their own: it checks that the compiler's host is the target the job claims, builds `thrust-server`
+# and `migrate` in release with the repository's commands, checks that both exist, and uploads them for three days. Each sets Rust up ITSELF, before the action, with a cache key
+# of its own: a cache is not saved when setup-rust is two composite actions deep. `docker` builds docker/Dockerfile (which builds the same two binaries, inside the image, on musl)
+# and starts the image once. Nothing is published, signed or attested by any of them.
 
 on:
   workflow_dispatch:
@@ -34,6 +35,7 @@ on:
     paths:
       - .github/workflows/build-extended.yml
       - .github/actions/build-native/**
+      - docker/**
 
 permissions: {}
 
@@ -88,3 +90,57 @@ jobs:
           name: windows
           target: x86_64-pc-windows-msvc
           exe: .exe
+
+  # The image of the self-hosted server (docker/Dockerfile: `thrust-server` and `migrate`, static, on distroless; Build phase, stage 5), built and started once. Nothing in CI built an
+  # image before, and the repository had no Dockerfile. The build is on the runner's own Docker (28, with Buildx: no action sets it up), and nothing is pushed, signed or attested: no login,
+  # no registry, no token. The image is not uploaded either: the Dockerfile and the commit make it again, and the binaries a run uploads are the `linux` job's. Whether it STARTS is the
+  # other half of the proof, because an image that builds and cannot run (a library the base lacks, the wrong user, a signal it ignores) is not one a person can use:
+  #   * /healthz answers "ok" through a published port (THRUST_LISTEN is baked in as 0.0.0.0:8080: the server's own default, 127.0.0.1, cannot be reached through one);
+  #   * the process runs as uid 65532 (read from /proc, the process's own, not the image's declared USER);
+  #   * `docker stop` ends it with exit 0 inside five seconds: the server handles SIGINT only and as PID 1 ignores SIGTERM, so the image's STOPSIGNAL is what stops it (137 is a kill);
+  #   * `migrate` runs in it (with no DATABASE_URL it refuses, and says so).
+  # No layer cache yet (pass 5 measures it): every run builds the whole tree, on musl, in the Dockerfile's builder.
+  docker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      IMAGE: thrust-server:ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The first line of the Dockerfile, `# check=error=true`, makes BuildKit's own lint fail the build on a warning (a shell-form ENTRYPOINT, a secret in an ENV, an undefined variable).
+      - name: Build the image
+        run: |
+          docker build --file docker/Dockerfile --tag "$IMAGE" .
+          docker image ls "$IMAGE"
+
+      - name: The image starts, answers, runs as 65532 and stops on SIGINT
+        run: |
+          set -eu
+          cid="$(docker run --detach --publish 127.0.0.1:8080:8080 "$IMAGE")"
+          trap 'status=$?; test "$status" = 0 || docker logs "$cid" || true; docker rm --force "$cid" > /dev/null 2>&1 || true' EXIT
+          # curl waits for the port itself, so there is no loop here. Docker's userland proxy takes the connection before the server inside is listening and drops it, so what
+          # the early attempts see is a reset or an empty reply, not a refusal: `--retry-connrefused` alone gave up on the first one (curl 56, seen when this was rehearsed).
+          # An attempt that is retried still prints its error, so one `curl: (56)` line above a green step is the wait, not a failure.
+          body="$(curl --silent --show-error --fail --max-time 5 --retry 20 --retry-delay 1 --retry-connrefused --retry-all-errors http://127.0.0.1:8080/healthz)"
+          test "$body" = ok || { echo "::error::/healthz answered '$body', not 'ok'"; exit 1; }
+          pid="$(docker inspect --format '{{.State.Pid}}' "$cid")"
+          uids="$(awk '/^Uid:/ { print $2 "," $3 "," $4 "," $5 }' "/proc/$pid/status")"
+          test "$uids" = 65532,65532,65532,65532 || { echo "::error::the server runs as uids $uids, not as 65532"; exit 1; }
+          docker stop --time 5 "$cid" > /dev/null
+          code="$(docker inspect --format '{{.State.ExitCode}}' "$cid")"
+          test "$code" = 0 || { echo "::error::the server exited with $code after docker stop, not 0 (137 is a kill: nothing stopped it in five seconds)"; exit 1; }
+          echo "answered, ran as 65532, stopped with exit $code"
+
+      # `migrate` with no DATABASE_URL refuses and says so: that shows it is in the image and runs there (the binary is static, and the base has no libc to fall back on).
+      - name: migrate runs in the image
+        run: |
+          out="$(docker run --rm --entrypoint /usr/local/bin/migrate "$IMAGE" 2>&1 || true)"
+          echo "$out"
+          case "$out" in
+            *"DATABASE_URL must be set"*) ;;
+            *) echo "::error::migrate did not run in the image: it should refuse for want of DATABASE_URL"; exit 1 ;;
+          esac

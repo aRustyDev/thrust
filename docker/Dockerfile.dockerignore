@@ -1,0 +1,19 @@
+# The ignore file of docker/Dockerfile (BuildKit reads `<Dockerfile>.dockerignore` beside the Dockerfile before the one at the root). The context is the
+# repository root, and an ALLOW LIST: only what the two cargo builds read goes into the build stage. A file that is missing fails the build, loudly.
+#
+# Why it matters: a build from a working tree would otherwise send `target/` (gigabytes) and `.git`, and `COPY . .` would make a change under web/ or
+# docs/ rebuild the compile layer. A CI checkout's context is 76 MB, 55 MB of it web/ (measured 2026-11-23).
+*
+!Cargo.toml
+!Cargo.lock
+!rust-toolchain.toml
+!.cargo
+!crates
+
+# Inside the allowed directories, what a working tree grows that a build must not read or send (the last match wins, so these come after the allow list).
+**/target
+**/node_modules
+**/.wrangler
+**/mutants.out*
+**/.env*
+**/.dev.vars*

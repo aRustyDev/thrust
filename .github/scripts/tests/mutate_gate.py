@@ -39,7 +39,8 @@ ACT = "verdict/action.yml"  # the action every called workflow's `verdict` job c
 DEEP = "deep.yml"  # not a called workflow: the nightly run of the randomized tests, which nothing waits for
 NAT = "build-native/action.yml"  # the steps the native jobs share (linux in build.yml, macos in build-extended.yml)
 BEXT = "build-extended.yml"  # not a called workflow: nightly and before a release, never in the gate
-TOOLS = "contract-pass-tools/action.yml"  # what a pass needs on the runner; the e2e cells are the longest job of every full run
+DKF, DIG = "Dockerfile", "Dockerfile.dockerignore"  # the image of the server, and its allow list (docker/: the wiring test reads them, and `docker` of build-extended.yml builds it)
+TOOLS ="contract-pass-tools/action.yml"  # what a pass needs on the runner; the e2e cells are the longest job of every full run
 SHELL = shutil.which("dash") or "sh"
 TIMEOUT = 900
 # where each target lives, relative to the repository root
@@ -58,9 +59,11 @@ TARGET_PATH = {
     TOOLS: ".github/actions/contract-pass-tools/action.yml",
     NAT: ".github/actions/build-native/action.yml",
     BEXT: ".github/workflows/build-extended.yml",
+    DKF: "docker/Dockerfile",
+    DIG: "docker/Dockerfile.dockerignore",
 }
 # The workflows that tests judge as files: a mutant of one of these must fail test_workflow_wiring.py.
-WIRED = (CI, DOC, SEC, WEB, LNT, TST, BLD, ACT, DEEP, TOOLS, NAT, BEXT)
+WIRED = (CI, DOC, SEC, WEB, LNT, TST, BLD, ACT, DEEP, TOOLS, NAT, BEXT, DKF, DIG)
 
 # The called workflows, each with its file, its jobs (in the order the file has them), and the text of ci.yml's `gate` needs that names its
 # call and what that becomes without it. A stage of the migration adds a row, and every mutant below that is written for "a called
@@ -494,6 +497,61 @@ MUTANTS = [
     (BEXT, "build-extended grants more at the top", "\npermissions: {}\n", "\npermissions:\n  contents: write\n"),
     (BEXT, "build-extended lets two runs of one ref go on at once", "  group: build-extended-${{ github.ref }}\n", "  group: build-extended\n"),
     (BEXT, "build-extended lets a push not replace the run in flight", "  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}\n", "  cancel-in-progress: false\n"),
+    # the image of the server (stage 5; the owner's choices of 2026-11-23: static musl on distroless, user 65532, docker/, a start check as well as a build)
+    (DKF, "the Dockerfile does not make BuildKit's lint an error", "# check=error=true\n\n", ""),
+    (DKF, "the builder is not pinned by a digest", re.compile(r"(FROM rust:alpine3\.24)@sha256:[0-9a-f]{64}( AS build)"), r"\1\2"),
+    (DKF, "the runtime is not pinned by a digest", re.compile(r"(FROM gcr\.io/distroless/static-debian13:nonroot)@sha256:[0-9a-f]{64}\n"), r"\1\n"),
+    (DKF, "the builder names a Rust version a second time", "FROM rust:alpine3.24@", "FROM rust:1.100.0-alpine@"),
+    (DKF, "the runtime is distroless on glibc, not static", "FROM gcr.io/distroless/static-debian13:nonroot@", "FROM gcr.io/distroless/cc-debian13:nonroot@"),
+    (DKF, "the runtime is the root variant of distroless", "FROM gcr.io/distroless/static-debian13:nonroot@", "FROM gcr.io/distroless/static-debian13:latest@"),
+    (DKF, "the compiler is installed after the source is copied", "COPY rust-toolchain.toml ./\nRUN rustup toolchain install --profile minimal --no-self-update\nCOPY . .\n",
+     "COPY rust-toolchain.toml ./\nCOPY . .\nRUN rustup toolchain install --profile minimal --no-self-update\n"),
+    (DKF, "the image's compiler is never made the file's", "RUN rustup toolchain install --profile minimal --no-self-update\n", ""),
+    (DKF, "rust-toolchain.toml is not copied before the install", "COPY rust-toolchain.toml ./\n", ""),
+    (DKF, "the server is built in debug", "RUN cargo build --release --locked -p thrust-server \\\n", "RUN cargo build --locked -p thrust-server \\\n"),
+    (DKF, "the server is built unlocked", "RUN cargo build --release --locked -p thrust-server \\\n", "RUN cargo build --release -p thrust-server \\\n"),
+    (DKF, "migrate is built without its feature", " && cargo build --release --locked -p thrust-adapters-postgres --features native --bin migrate \\\n",
+     " && cargo build --release --locked -p thrust-adapters-postgres --bin migrate \\\n"),
+    (DKF, "the runtime takes the server and not migrate", "COPY --from=build /out/thrust-server /out/migrate /usr/local/bin/\n", "COPY --from=build /out/thrust-server /usr/local/bin/\n"),
+    (DKF, "the image runs as root", "USER 65532:65532\n", "USER root\n"),
+    (DKF, "the image runs as a name, which Kubernetes cannot verify", "USER 65532:65532\n", "USER nonroot\n"),
+    (DKF, "the image goes back to root after its user", "USER 65532:65532\nSTOPSIGNAL", "USER 65532:65532\nUSER 0\nSTOPSIGNAL"),
+    (DKF, "the image has no stop signal, so docker stop sends SIGTERM, which the server ignores", "STOPSIGNAL SIGINT\n", ""),
+    (DKF, "the image stops on SIGTERM", "STOPSIGNAL SIGINT\n", "STOPSIGNAL SIGTERM\n"),
+    (DKF, "the server listens on the loopback, which a published port cannot reach", "ENV THRUST_LISTEN=0.0.0.0:8080\n", "ENV THRUST_LISTEN=127.0.0.1:8080\n"),
+    (DKF, "the entrypoint is a shell form, so a shell is PID 1 (and distroless has none)", 'ENTRYPOINT ["/usr/local/bin/thrust-server"]', "ENTRYPOINT /usr/local/bin/thrust-server"),
+    (DKF, "the image turns the test routes on", "EXPOSE 8080\n", "ENV THRUST_TEST_ROUTES=1\nEXPOSE 8080\n"),
+    (DKF, "the image takes a database URL as a build argument", "EXPOSE 8080\n", "ARG DATABASE_URL\nEXPOSE 8080\n"),
+    (DIG, "the ignore file does not deny everything first", "\n*\n!Cargo.toml\n", "\n!Cargo.toml\n"),
+    (DIG, "the ignore file lets the whole web app in", "!crates\n", "!crates\n!web\n"),
+    (DIG, "the ignore file does not let the toolchain file in", "!rust-toolchain.toml\n", ""),
+    (DIG, "the ignore file lets a build directory in", "**/target\n", ""),
+    (DIG, "the ignore file lets a local environment file in", "**/.env*\n", ""),
+    (BEXT, "docker runs on an image that moves", "    runs-on: ubuntu-24.04\n", "    runs-on: ubuntu-latest\n"),
+    (BEXT, "docker sets Buildx up with an action", "  docker:\n    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n    permissions:\n      contents: read\n    env:\n      IMAGE: thrust-server:ci\n    steps:\n",
+     "  docker:\n    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n    permissions:\n      contents: read\n    env:\n      IMAGE: thrust-server:ci\n    steps:\n      - uses: docker/setup-buildx-action@v4\n"),
+    (BEXT, "docker names another image", "      IMAGE: thrust-server:ci\n", "      IMAGE: thrust-server:latest\n"),
+    (BEXT, "docker builds another file", "docker build --file docker/Dockerfile --tag", "docker build --file Dockerfile --tag"),
+    (BEXT, "docker builds from the image's own directory", '--tag "$IMAGE" .\n', '--tag "$IMAGE" docker\n'),
+    (BEXT, "docker builds nothing", '          docker build --file docker/Dockerfile --tag "$IMAGE" .\n', "          true\n"),
+    (BEXT, "docker's start check does not fail on an error status", "curl --silent --show-error --fail --max-time 5", "curl --silent --show-error --max-time 5"),
+    (BEXT, "docker's start check does not wait for the port", "--retry 20 --retry-delay 1 --retry-connrefused --retry-all-errors", "--retry 0"),
+    (BEXT, "docker's start check retries a refusal only, which the proxy's early resets are not", " --retry-all-errors", ""),
+    (BEXT, "docker's start check does not look at the answer", 'test "$body" = ok ||', 'test -n "$body" ||'),
+    (BEXT, "docker's start check does not look at the user", 'test "$uids" = 65532,65532,65532,65532 ||', 'test -n "$uids" ||'),
+    (BEXT, "docker's start check reads the image's declared user, not the process's", '"/proc/$pid/status"', '"/etc/hostname"'),
+    (BEXT, "docker's start check kills the server instead of stopping it", 'docker stop --time 5 "$cid"', 'docker kill "$cid"'),
+    (BEXT, "docker's start check gives the server half a minute to stop", "docker stop --time 5", "docker stop --time 30"),
+    (BEXT, "docker's start check does not look at the exit code", 'test "$code" = 0 ||', 'test -n "$code" ||'),
+    (BEXT, "docker runs another binary than migrate", "--entrypoint /usr/local/bin/migrate", "--entrypoint /usr/local/bin/thrust-server"),
+    (BEXT, "docker accepts any answer of migrate", '*"DATABASE_URL must be set"*) ;;', "*) ;;"),
+    (BEXT, "docker pushes the image", '          docker image ls "$IMAGE"\n', '          docker image ls "$IMAGE"\n          docker push "$IMAGE"\n'),
+    (BEXT, "docker uploads the image", "      - name: migrate runs in the image\n",
+     "      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2\n        with:\n          name: image\n          path: image.tar\n      - name: migrate runs in the image\n"),
+    (BEXT, "docker may ask for an id-token", "    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n    permissions:\n      contents: read\n", "    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n    permissions:\n      contents: read\n      id-token: write\n"),
+    (BEXT, "docker waits for another job", "  docker:\n    runs-on: ubuntu-24.04\n", "  docker:\n    needs: [macos]\n    runs-on: ubuntu-24.04\n"),
+    (BEXT, "the job of the image is renamed", "  docker:\n    runs-on: ubuntu-24.04\n", "  image:\n    runs-on: ubuntu-24.04\n"),
+    (BEXT, "build-extended is not started by an edit of the image's files", "      - docker/**\n", ""),
     (BLD, "linux may ask for an id-token", "    if: contains(fromJSON(inputs.plan), 'linux')\n    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n    permissions:\n      contents: read\n",
      "    if: contains(fromJSON(inputs.plan), 'linux')\n    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n    permissions:\n      contents: read\n      id-token: write\n"),
     # the wasm job (Phase 3, stage 2): the bundle's two Workers, built with the bundle's commands, under the bundle's cache key. Each of these leaves a job that still looks healthy
@@ -539,6 +597,8 @@ EQUIVALENT = [
     (TOOLS, "(equivalent) a comment is added to contract-pass-tools", "runs:\n  using: composite\n", "runs:\n  # a comment\n  using: composite\n"),
     (NAT, "(equivalent) a comment is added to build-native", "runs:\n  using: composite\n", "runs:\n  # a comment\n  using: composite\n"),
     (BEXT, "(equivalent) a comment is added to build-extended.yml", "permissions: {}\n\n# A newer push", "permissions: {}\n\n# a comment\n# A newer push"),
+    (DKF, "(equivalent) a comment is added to the Dockerfile", "# check=error=true\n\n# The self-hosted", "# check=error=true\n\n# a comment\n# The self-hosted"),
+    (DIG, "(equivalent) a comment is added to the ignore file", "\n*\n!Cargo.toml\n", "\n# a comment\n*\n!Cargo.toml\n"),
 ]
 
 
@@ -565,6 +625,7 @@ def gate_tests(base, gate_text):
 def wiring_tests(base, overrides):
     """test_workflow_wiring.py, on a copy of .github/ under `base`, with these files (relative to the root) replaced by these texts."""
     shutil.copytree(os.path.join(ROOT, ".github"), os.path.join(base, ".github"), ignore=shutil.ignore_patterns("__pycache__", "node_modules"))
+    shutil.copytree(os.path.join(ROOT, "docker"), os.path.join(base, "docker"))  # the image's files, which the wiring test reads too
     for rel, text in overrides.items():
         with open(os.path.join(base, rel), "w", encoding="utf-8") as f:
             f.write(text)

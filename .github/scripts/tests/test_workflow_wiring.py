@@ -403,13 +403,75 @@ if ext_text is not None:
         return runs
     check(f"{EXT_PATH}: a push to a release candidate and to the owner's hand-made one runs, a push to its twin or to main does not",
           [push_runs(b) for b in ("rc/2026-11-19T06-42-32Z", "rc/manual-0.5.0", "rc/2026-11-19T06-42-32Z-tmp-Ab12Cd", "main")], [True, True, False, False])
-    check(f"{EXT_PATH} is started by a pull request only if it edits this file or the action it uses, so no other pull request pays for it",
-          "  pull_request:\n    paths:\n      - .github/workflows/build-extended.yml\n      - .github/actions/build-native/**\n\npermissions: {}\n" in ext_text, True)
+    check(f"{EXT_PATH} is started by a pull request only if it edits this file, the action it uses or the image's files, so no other pull request pays for it",
+          "  pull_request:\n    paths:\n      - .github/workflows/build-extended.yml\n      - .github/actions/build-native/**\n      - docker/**\n\npermissions: {}\n" in ext_text, True)
     check(f"{EXT_PATH} grants nothing at the top, and its jobs read the repository only", "\npermissions: {}\n" in ext_text and
           all("    permissions:\n      contents: read\n" in block(ext_text, j) for j in job_ids(ext_text)), True)
     check(f"{EXT_PATH} has one run in flight per ref, and a push or a pull request replaces the one before it",
           "concurrency:\n  group: build-extended-${{ github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}\n" in ext_text, True)
-    check(f"{EXT_PATH} has the jobs macos and windows and no other (the targets that follow are added to it on purpose)", job_ids(ext_text), ["macos", "windows"])
+    check(f"{EXT_PATH} has the jobs macos, windows and docker and no other (the targets that follow are added to it on purpose)", job_ids(ext_text), ["macos", "windows", "docker"])
+
+# The image of the server (Build phase, stage 5): docker/Dockerfile, its ignore file and the job `docker` of build-extended.yml, which builds the image and starts it once. The owner chose static
+# musl on distroless, the numeric user 65532, the directory docker/ and a start check as well as a build (2026-11-23). Things about them that can be wrong and leave the job green:
+# a base that moves (a tag with no digest: the image of tomorrow is not the one proved), a compiler named a second time (a FROM that carries a Rust version, which Dependabot's bump of
+# rust-toolchain.toml would not follow: the image would build with the old one, or fail), the compiler installed AFTER the source is copied (the layer would never be reused, and the
+# order is the point of the pin), cargo commands that are not the build-native action's (the proof would be of other binaries than the ones the other targets build), a user that is root or a
+# name, a stop signal the server ignores (`docker stop` would wait ten seconds and kill it), a listen address the published port cannot reach, a deployment's setting or a secret baked into the
+# image, an allow list that is not one (a `docker build` from a working tree would send `target/`), a start check that cannot fail (no `--fail`, no assertion on the body, the uid, or the exit
+# code) and a job that publishes (a login, a push, a secret, an upload). Each is a line, checked as text, and the mutant driver changes each.
+DOCKERFILE_PATH = "docker/Dockerfile"
+DOCKERIGNORE_PATH = "docker/Dockerfile.dockerignore"
+dockerfile = read_text(DOCKERFILE_PATH)
+dockerignore = read_text(DOCKERIGNORE_PATH)
+check(f"{DOCKERFILE_PATH} and its ignore file are there, beside each other (BuildKit reads `<Dockerfile>.dockerignore` first)", (dockerfile is not None, dockerignore is not None), (True, True))
+if dockerfile is not None and dockerignore is not None:
+    docker_code = [l for l in dockerfile.splitlines() if l.strip() and not l.lstrip().startswith("#")]
+    froms = [l for l in docker_code if l.startswith("FROM ")]
+    check(f"{DOCKERFILE_PATH} starts with the directive that makes BuildKit's own lint fail the build", dockerfile.startswith("# check=error=true\n"), True)
+    check(f"{DOCKERFILE_PATH}: it has two bases, the builder and the runtime, each pinned by the digest of its index",
+          (len(froms), [l for l in froms if not re.match(r"^FROM \S+:\S+@sha256:[0-9a-f]{64}( AS \w+)?$", l)]), (2, []))
+    check(f"{DOCKERFILE_PATH}: no base names a Rust version (the compiler is rust-toolchain.toml's alone)", [l for l in froms if re.search(r"rust:\d", l)], [])
+    check(f"{DOCKERFILE_PATH}: the builder is named for its system, and the runtime is distroless static, the non-root variant",
+          ([l.split("@")[0] for l in froms]), ["FROM rust:alpine3.24", "FROM gcr.io/distroless/static-debian13:nonroot"])
+    check(f"{DOCKERFILE_PATH}: rustup installs what rust-toolchain.toml pins, before the source is copied (the layer is reused until the pin changes)",
+          0 <= dockerfile.find("COPY rust-toolchain.toml ./\n") < dockerfile.find("RUN rustup toolchain install --profile minimal --no-self-update\n") < dockerfile.find("COPY . .\n"), True)
+    action_cmds = re.findall(r"run: scripts/rs (cargo build [^\n]+)\n", native_action)
+    check(f"{DOCKERFILE_PATH}: it builds with the two commands of build-native, in release and locked (the proof is of the same binaries)",
+          (action_cmds, [c for c in action_cmds if f"RUN {c}" not in dockerfile and f" && {c} \\\n" not in dockerfile]),
+          (["cargo build --release --locked -p thrust-server", "cargo build --release --locked -p thrust-adapters-postgres --features native --bin migrate"], []))
+    check(f"{DOCKERFILE_PATH}: the runtime stage takes the two binaries from the builder", "COPY --from=build /out/thrust-server /out/migrate /usr/local/bin/\n" in dockerfile, True)
+    for what, line in (("runs as the numeric non-root user of distroless", "USER 65532:65532"), ("stops on SIGINT, the one signal the server handles", "STOPSIGNAL SIGINT"),
+                       ("listens where a published port reaches it", "ENV THRUST_LISTEN=0.0.0.0:8080"), ("starts the server through an exec-form ENTRYPOINT, so that it is PID 1",
+                                                                                                              'ENTRYPOINT ["/usr/local/bin/thrust-server"]')):
+        check(f"{DOCKERFILE_PATH}: the image {what} (`{line}`), once", docker_code.count(line), 1)
+    check(f"{DOCKERFILE_PATH}: it bakes in no secret and no setting of a deployment (no ENV or ARG but THRUST_LISTEN), and so never turns the test routes on",
+          [l for l in docker_code if re.match(r"^(ENV|ARG) ", l) and l != "ENV THRUST_LISTEN=0.0.0.0:8080"], [])
+    check(f"{DOCKERFILE_PATH}: nothing in it runs as another user than 65532 (no USER line but the one)", [l for l in docker_code if l.startswith("USER ")], ["USER 65532:65532"])
+    ignore_lines = [l for l in dockerignore.splitlines() if l.strip() and not l.startswith("#")]
+    check(f"{DOCKERIGNORE_PATH} is an allow list: it denies everything, then allows what the two cargo builds read and nothing else",
+          ignore_lines[:6], ["*", "!Cargo.toml", "!Cargo.lock", "!rust-toolchain.toml", "!.cargo", "!crates"])
+    check(f"{DOCKERIGNORE_PATH}: after the allow list (the last match wins) it takes out what a working tree grows inside the allowed directories",
+          sorted(ignore_lines[6:]), sorted(["**/target", "**/node_modules", "**/.wrangler", "**/mutants.out*", "**/.env*", "**/.dev.vars*"]))
+
+if ext_text is not None:
+    docker_block = block(ext_text, "docker")
+    docker_run = [l for l in docker_block.splitlines() if not l.strip().startswith("#")]
+    check(f"{EXT_PATH}: docker runs on ubuntu-24.04, a pinned image, with the runner's own Docker (no action sets one up)",
+          ("    runs-on: ubuntu-24.04\n" in docker_block, [l for l in docker_run if "setup-buildx" in l or "setup-qemu" in l or "docker/" in l and "uses:" in l]), (True, []))
+    check(f"{EXT_PATH}: docker names its image once, at the job", "    env:\n      IMAGE: thrust-server:ci\n" in docker_block, True)
+    check(f"{EXT_PATH}: docker builds docker/Dockerfile, from the repository root, into that image",
+          '          docker build --file docker/Dockerfile --tag "$IMAGE" .\n' in docker_block, True)
+    steps = docker_block.find("    steps:\n")
+    order = [docker_block.find(s, steps) for s in ("uses: actions/checkout@", "- name: Build the image", "- name: The image starts, answers, runs as 65532 and stops on SIGINT", "- name: migrate runs in the image")]
+    check(f"{EXT_PATH}: docker checks the code out, builds the image, starts it, then runs migrate in it, in that order", (order == sorted(order), -1 in order), (True, False))
+    start_checks = ('--publish 127.0.0.1:8080:8080 "$IMAGE")"', "curl --silent --show-error --fail --max-time 5 --retry 20 --retry-delay 1 --retry-connrefused --retry-all-errors http://127.0.0.1:8080/healthz",
+                    'test "$body" = ok ||', "/proc/$pid/status", 'test "$uids" = 65532,65532,65532,65532 ||', "docker stop --time 5", 'test "$code" = 0 ||')
+    check(f"{EXT_PATH}: docker's start check publishes the port, waits for /healthz with curl, fails on an error status, and asserts the body, the process's uid and the exit code of a stop",
+          [c for c in start_checks if c not in docker_block], [])
+    check(f"{EXT_PATH}: docker runs migrate in the image and requires its refusal for want of DATABASE_URL",
+          ('--entrypoint /usr/local/bin/migrate "$IMAGE"' in docker_block, '*"DATABASE_URL must be set"*) ;;' in docker_block), (True, True))
+    check(f"{EXT_PATH}: docker publishes nothing and keeps nothing: no login, no push, no registry, no secret, no environment, no id-token, no upload",
+          [l for l in docker_run if re.search(r"docker (login|push)|--push|login-action|build-push-action|ghcr\.io|secrets\.|environment:|id-token|attestations|packages:|contents: write|upload-artifact", l)], [])
 
 # The bash job (Lint phase, stage 1) runs shellcheck over the scripts the repository maintains, through .github/scripts/check-shell.sh. Four things about
 # it can be wrong and leave the job looking healthy until the runner differs from a laptop: a shellcheck installed at a version the helper is not held to (the
