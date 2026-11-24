@@ -81,6 +81,9 @@ Actions and the Cloudflare Worker stay without Kubernetes credentials.
    `{id,name,vpc_service_id}` result and delete only a canonical cluster config. The Kubernetes
    controller still needs to call them (or an equivalent API client), combine the verified ID
    with its CNPG UID into the ready receipt, and recover a partially applied VPC/Terraform update.
+   `receipt_from_verified_connectivity` now enforces that combination in the provisioner contract:
+   it admits only a ready lease and a verified Hyperdrive name equal to that lease's derived
+   identity, so a valid result for another PR/candidate cannot be persisted as this Preview.
 3. Define and implement a trusted migration execution and credential contract. Migrate the
    exact PR revision as `pr_<n>` through a bounded, authenticated path; never expose the
    provisioner, deployment or cluster database credentials to PR-controlled code. Demonstrate
