@@ -99,7 +99,7 @@ all four is 167 + 208 + 219 + 214 = 808 s of runner time at the medians, on runn
 - **Passes 5 to 7 were measured stage by stage and are recorded there**: stage 1's cache (134 s → 101 s), stage 2's (238 s → 79 s, and the bundle restores it: a release candidate's build 310 s → 165 s), stages 3 and 4's
   (the flat layout, 249 s → 134 s and 219 s → 133 s). **Stages 5 and 6 added no cache, with the numbers** (`docker` writes none, `bsd` writes none, and the one candidate that wrote 1.0 GB per ref was not chosen).
 - **Not measured:** the contention (0020 has no queue waits); the share of `ci-scripts`'s +32 s that the mutant driver is; the 33 s that the groups do not explain; the first night with every job on its own saved cache
-  (the night of 2026-11-24, 06:11 UTC, had not run when this was collected, and is not read here).
+  (the night of 2026-11-24, 06:11 UTC, had not run when this was collected, and is not read here; it ran after the acceptance merged, and the phase document records it: green, `docker` 212 s, `bsd` 219 s, `macos` 187 s and `windows` 241 s, the last two on a partial cache restore).
 
 ## What is in the appendix
 
