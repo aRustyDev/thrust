@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/aRustyDev/thrust/compare/v0.4.0...v0.5.0) - 2026-11-25
+
+### Added
+
+- *(jobs)* schedule the daily hard delete on the Worker and the server ([#343](https://github.com/aRustyDev/thrust/pull/343))
+- *(retention)* run_retention, its windows and its admin routes ([#340](https://github.com/aRustyDev/thrust/pull/340))
+- *(retention)* purge ports for soft-deleted work items and dispatched outbox rows ([#336](https://github.com/aRustyDev/thrust/pull/336))
+
+### Fixed
+
+- *(preview)* refuse cross-schema migration grants ([#353](https://github.com/aRustyDev/thrust/pull/353))
+
+### Other
+
+- *(test)* the Worker's wasm32 unit tests and a new workers job (Test phase, stage 8, G-6) ([#345](https://github.com/aRustyDev/thrust/pull/345))
+- bind verified connectivity to preview receipts ([#378](https://github.com/aRustyDev/thrust/pull/378))
+- add preview cluster receipt contract ([#373](https://github.com/aRustyDev/thrust/pull/373))
+- encode preview cluster lease contract ([#372](https://github.com/aRustyDev/thrust/pull/372))
+- model preview cluster lease lifecycle ([#371](https://github.com/aRustyDev/thrust/pull/371))
+- plan preview snapshot cluster isolation ([#368](https://github.com/aRustyDev/thrust/pull/368))
+- Add a closed preview migration executor Worker ([#339](https://github.com/aRustyDev/thrust/pull/339))
+
 ## [0.4.0](https://github.com/aRustyDev/thrust/compare/v0.3.0...v0.4.0) - 2026-11-19
 
 ### Added
